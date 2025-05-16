@@ -1,105 +1,25 @@
 Neural Crypto Bot
-<div align="center">
-    <img src="https://via.placeholder.com/200x200?text=Neural+Crypto+Bot" alt="Neural Crypto Bot Logo" width="200"/>
-    <p>
-        <em>Bot de trading avançado com inteligência artificial para mercados de criptomoedas</em>
-    </p>
-</div>
-Mostrar Imagem
-Mostrar Imagem
-Mostrar Imagem
-Mostrar Imagem
-📑 Índice
+Bot de trading avançado com inteligência artificial para mercados de criptomoedas, desenvolvido com arquitetura moderna e práticas de engenharia de elite. Utiliza técnicas de machine learning para maximizar ganhos e minimizar perdas em mercados voláteis.
+🚀 Começando
+Essas instruções permitirão que você obtenha uma cópia do projeto em operação na sua máquina local para fins de desenvolvimento e teste.
+Consulte Implantação para saber como implantar o projeto em um ambiente de produção.
+📋 Pré-requisitos
+Para instalar e executar o Neural Crypto Bot, você precisará:
 
-Visão Geral
-Características
-Arquitetura
-Requisitos
-Instalação
+Python 3.11+
+Docker e Docker Compose
+Git
+Poetry (gerenciador de dependências Python)
+Chaves de API de exchanges para trading real
 
-Linux/MacOS
-Windows
+bash# Verificar versão do Python
+python --version  # Deve ser 3.11 ou superior
 
-
-Configuração
-Uso
-Estratégias de Trading
-Gestão de Risco
-Desenvolvimento
-Testes
-Contribuição
-Licença
-Contato
-
-🌟 Visão Geral
-O Neural Crypto Bot é uma plataforma avançada de trading algorítmico para mercados de criptomoedas, desenvolvida com tecnologias de ponta e arquitetura moderna. Utilizando técnicas avançadas de machine learning e engenharia de software, o bot visa maximizar ganhos e minimizar perdas em mercados voláteis através de análise de dados em tempo real, detecção de padrões e execução otimizada de ordens.
-Este sistema foi projetado com foco em:
-
-Robustez: Arquitetura resiliente com tolerância a falhas
-Escalabilidade: Capacidade de processar grandes volumes de dados
-Flexibilidade: Fácil adição de novas estratégias e adaptação a mudanças de mercado
-Observabilidade: Monitoramento completo de desempenho e comportamento
-
-🔥 Características
-Principais Funcionalidades
-
-Integração Multi-Exchange: Conecta-se simultaneamente a várias exchanges (Binance, Coinbase, Kraken, etc.)
-Processamento de Dados em Tempo Real: Coleta e análise de dados de mercado com latência mínima
-Modelos de ML Avançados: Utiliza deep learning e técnicas de IA para previsão de mercado
-Estratégias Customizáveis: Framework flexível para implementação de diversas estratégias
-Gestão Avançada de Risco: Sistemas multi-camada para proteção de capital
-Backtesting: Testes de estratégias com dados históricos e simulação realista
-Dashboard Interativo: Visualização do desempenho, trades e métricas em tempo real
-APIs RESTful & GraphQL: Interfaces para interação programática
-Logging & Alertas: Sistema abrangente de logs e notificações
-
-Tecnologias Utilizadas
-
-Backend: Python 3.11+, FastAPI, AsyncIO, gRPC
-Machine Learning: PyTorch, Scikit-learn, XGBoost, Prophet
-Processamento de Dados: Pandas, NumPy, Polars, Arctic
-Armazenamento: PostgreSQL/TimescaleDB, Redis, MongoDB
-Mensageria: Kafka, Redis Streams
-Infraestrutura: Docker, Kubernetes
-Observabilidade: Prometheus, Grafana, OpenTelemetry
-
-🏗 Arquitetura
-O Neural Crypto Bot segue uma arquitetura modular baseada em Domain-Driven Design (DDD), com os seguintes componentes principais:
-┌─────────────────────────────────────────────────────────────────┐
-│                         Frontend                                │
-├─────────────────────────────────────────────────────────────────┤
-│                         API Layer                               │
-│   (REST API / GraphQL / WebSockets)                            │
-├──────────────┬──────────────┬────────────────┬─────────────────┤
-│  Strategy    │ Execution    │   Risk         │   Analytics     │
-│  Engine      │ Service      │   Management   │   Service       │
-├──────────────┼──────────────┼────────────────┼─────────────────┤
-│  Data        │ Feature      │   Model        │   Backtesting   │
-│  Collection  │ Engineering  │   Training     │   Engine        │
-├──────────────┴──────────────┴────────────────┴─────────────────┤
-│                      Infrastructure                             │
-│  (Database, Message Broker, Caching, Observability)            │
-└─────────────────────────────────────────────────────────────────┘
-Componentes do Sistema
-
-Data Collection: Coleta dados de exchanges e outras fontes em tempo real
-Feature Engineering: Processa dados brutos em features para modelos de ML
-Model Training: Treina e avalia modelos preditivos de séries temporais
-Strategy Engine: Define e executa estratégias de trading
-Execution Service: Gerencia execução de ordens com rotas e algoritmos otimizados
-Risk Management: Monitora e controla riscos do portfólio
-Analytics Service: Calcula métricas de performance e gera relatórios
-API Layer: Fornece interfaces para interação externa
-
-📋 Requisitos
-
-Python: 3.11 ou superior
-Docker e Docker Compose: Versões recentes
-Git: Para controle de versão
-Chaves de API de exchanges de criptomoedas (para trading real)
-
-🚀 Instalação
-Linux/MacOS
+# Verificar Docker
+docker --version
+docker-compose --version
+🔧 Instalação
+Siga estes passos para configurar um ambiente de desenvolvimento:
 
 Clone o repositório:
 
@@ -108,218 +28,98 @@ cd neural-crypto-bot
 
 Execute o script de instalação:
 
-bashchmod +x install.sh
+bash# Linux/MacOS
+chmod +x install.sh
 ./install.sh
 
-Inicie os serviços:
+# Windows (via Git Bash)
+bash install.sh
 
-bash./scripts/start_docker.sh
-Windows
-
-Clone o repositório usando o Git Bash ou PowerShell:
-
-powershellgit clone https://github.com/your-username/neural-crypto-bot.git
-cd neural-crypto-bot
-
-Execute o script de instalação (usando Git Bash):
-
-bashbash install.sh
-
-Inicie os serviços:
-
-powershell# Usando Git Bash
-./scripts/start_docker.sh
-
-# Usando PowerShell
-.\start_docker.ps1
-⚙️ Configuração
-
-Variáveis de Ambiente: Copie e ajuste o arquivo .env:
+Configure as variáveis de ambiente:
 
 bashcp .env.example .env
-# Edite o arquivo .env com suas configurações
+# Edite o arquivo .env com suas configurações e chaves de API
 
-Chaves de API: Adicione suas chaves de API de exchanges no arquivo .env:
-
-BINANCE_API_KEY=sua_chave_aqui
-BINANCE_API_SECRET=seu_segredo_aqui
-
-Configurações de Trading: Ajuste os parâmetros de trading de acordo com sua estratégia:
-
-DEFAULT_TRADING_PAIRS=BTC/USDT,ETH/USDT,SOL/USDT
-MAX_POSITION_SIZE=0.1
-MAX_LEVERAGE=3.0
-MAX_DRAWDOWN_PERCENT=5.0
-📊 Uso
-Uma vez que os serviços estejam em execução, você pode:
-
-Acessar a API: Disponível em http://localhost:8000
-
-Documentação Swagger: http://localhost:8000/docs
-Documentação ReDoc: http://localhost:8000/redoc
-
-
-Visualizar o Dashboard: Se instalado, acessar o Grafana em http://localhost:3000
-
-Usuário padrão: admin
-Senha padrão: neuralbot
-
-
-Executar comandos úteis:
-
-bash# Ver logs de todos os serviços
-docker-compose logs -f
-
-# Ver logs de um serviço específico
-docker-compose logs -f api
-
-# Reiniciar um serviço
-docker-compose restart collector
-
-Utilidades de desenvolvimento:
-
-bash# Executar testes
-./scripts/dev_utils.sh test
-
-# Verificar estilo do código
-./scripts/dev_utils.sh lint
-
-# Fazer backup do banco de dados
-./scripts/dev_utils.sh db-backup
-📈 Estratégias de Trading
-O Neural Crypto Bot suporta múltiplas estratégias de trading que podem ser utilizadas individualmente ou combinadas:
-
-Alpha Capture Multi-Horizonte: Identifica oportunidades em múltiplos timeframes
-Order Flow Imbalance: Detecta desequilíbrios no order book para entradas rápidas
-Statistical Arbitrage: Explora ineficiências de preço entre exchanges
-Regime-Switching Adaptativo: Adapta-se a diferentes condições de mercado
-Reinforcement Learning: Otimiza execuções para minimizar slippage
-Sentiment + On-Chain Analytics: Fusão de dados on-chain com análise de sentimento
-Custom Strategies: Framework para criação de estratégias personalizadas
-
-Para configurar uma estratégia:
-
-Acesse a API ou Dashboard
-Selecione o par de trading desejado
-Escolha a estratégia e ajuste os parâmetros
-Defina limites de risco
-Ative e monitore o desempenho
-
-🛡 Gestão de Risco
-O sistema implementa múltiplas camadas de proteção de capital:
-
-VaR Dinâmico: Cálculo de Value-at-Risk adaptativo
-Drawdown Control: Limites para evitar perdas significativas
-Circuit Breakers: Parada automática baseada em diversos indicadores
-Exposure Caps: Limites adaptativos baseados em volatilidade
-Correlation-Based Hedging: Proteções automáticas baseadas em correlações
-Smart Rebalancing: Estratégias de rebalanceamento otimizadas
-Tail Risk Hedging: Proteção contra eventos extremos
-
-🛠 Desenvolvimento
-Estrutura de Diretórios
-neural-crypto-bot/
-├── src/
-│   ├── analytics/         # Cálculo de métricas e relatórios
-│   ├── api/               # Interface REST/GraphQL
-│   ├── common/            # Componentes compartilhados
-│   ├── data_collection/   # Coleta de dados de mercado
-│   ├── execution_service/ # Execução de ordens
-│   ├── feature_engineering/ # Processamento de características
-│   ├── model_training/    # Treinamento de modelos ML
-│   ├── risk_management/   # Gestão de risco
-│   └── strategy_engine/   # Estratégias de trading
-├── tests/                 # Testes automatizados
-├── deployment/            # Configurações de implantação
-│   ├── docker/            # Dockerfiles
-│   ├── kubernetes/        # Manifestos Kubernetes
-│   └── terraform/         # Configurações Terraform
-├── scripts/               # Scripts utilitários
-└── docs/                  # Documentação
-Padrões de Desenvolvimento
-O Neural Crypto Bot segue os seguintes princípios:
-
-Domain-Driven Design: Modelagem orientada ao domínio
-Clean Architecture: Separação de responsabilidades
-SOLID Principles: Princípios de bom design de software
-Reactive Architecture: Processamento assíncrono e reativo
-Test-Driven Development: Desenvolvimento orientado a testes
-Continuous Integration/Deployment: Automação de integração e implantação
-
-Fluxo de Trabalho
-
-Desenvolvimento em feature branches
-Pull requests com revisão de código
-CI/CD automatizado para testes
-Deployment para ambiente de produção
-
-Ambiente de Desenvolvimento
-
-Configure o ambiente de desenvolvimento:
-
-bash./scripts/dev_utils.sh init
-
-Ative o ambiente virtual:
+Inicie os serviços:
 
 bash# Linux/MacOS
-source .venv/bin/activate
+./scripts/start_docker.sh
 
 # Windows PowerShell
-.\.venv\Scripts\Activate.ps1
+.\start_docker.ps1
 
-Execute os testes:
+Verifique se a instalação foi bem-sucedida acessando a API:
 
+http://localhost:8000/docs
+⚙️ Executando os testes
+O projeto possui uma suíte completa de testes unitários, de integração e de sistema.
+Para executar todos os testes:
 bash./scripts/dev_utils.sh test
-🧪 Testes
-O projeto mantém uma extensa suíte de testes para garantir a qualidade do código:
-Tipos de Testes
+Ou usando Poetry diretamente:
+bashpoetry run pytest
+🔩 Analise os testes de ponta a ponta
+Os testes de ponta a ponta (end-to-end) verificam se todo o sistema funciona corretamente, simulando operações reais de trading:
+bash# Executar testes de sistema
+poetry run pytest tests/system
 
-Testes Unitários: Verificam componentes isolados
-Testes de Integração: Validam a interação entre componentes
-Testes de Sistema: Testam o sistema como um todo
-Backtests: Simulam estratégias em dados históricos
-
-Execução de Testes
-bash# Executar todos os testes
-pytest
-
-# Executar testes unitários
-pytest tests/unit
-
-# Executar testes com cobertura
-pytest --cov=src
-
-# Executar backtests
+# Executar backtests em dados históricos
 python -m src.strategy_engine.backtest --strategy=alpha_capture --pair=BTC/USDT --start=2023-01-01 --end=2023-12-31
-👥 Contribuição
-Contribuições são bem-vindas! Para contribuir com o projeto:
+Estes testes garantem que todos os componentes do sistema interagem corretamente, desde a coleta de dados até a execução de ordens.
+⌨️ E testes de estilo de codificação
+O projeto utiliza ferramentas de linting e formatação para manter a qualidade do código:
+bash# Verificar estilo com Black e isort
+./scripts/dev_utils.sh lint
 
-Fork o repositório
-Crie uma branch para sua feature (git checkout -b feature/nova-feature)
-Faça commit de suas mudanças (git commit -m 'Adiciona nova feature')
-Push para a branch (git push origin feature/nova-feature)
-Abra um Pull Request
+# Executar verificador de tipos (mypy)
+poetry run mypy src/
 
-Diretrizes de Contribuição
+# Verificar problemas com ruff
+poetry run ruff src/
+Os testes de estilo garantem que o código segue as melhores práticas de desenvolvimento Python.
+📦 Implantação
+Para implantar o Neural Crypto Bot em um ambiente de produção:
 
-Siga o estilo de código do projeto (use black e isort)
-Escreva testes para novas funcionalidades
-Atualize a documentação quando necessário
-Respeite o Code of Conduct
+Configure credenciais de exchanges seguras
+Ajuste os parâmetros de risco para o ambiente de produção
+Use os scripts de deployment Docker ou Kubernetes:
 
-📜 Licença
-Este projeto está licenciado sob a licença MIT - veja o arquivo LICENSE para detalhes.
-📬 Contato
+bash# Deployment com Docker em produção
+docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 
-Autor: Igor Almeida Dos Santos
-Email: igor.almeidasantos2020@gmail.com
-GitHub: github.com/your-username
+# Deployment com Kubernetes
+kubectl apply -f deployment/kubernetes/
+⚠️ Atenção: Sempre comece com valores pequenos para limites de posição e teste em uma exchange com volume de mercado suficiente.
+🛠️ Construído com
+
+Python 3.11+ - Linguagem de programação principal
+FastAPI - Framework web para APIs
+PyTorch - Framework para machine learning
+PostgreSQL/TimescaleDB - Banco de dados para séries temporais
+Redis - Armazenamento em memória e cache
+Kafka - Sistema de mensageria
+Docker - Containerização
+Poetry - Gerenciamento de dependências
+CCXT - Biblioteca para integração com exchanges
+
+🖇️ Colaborando
+Por favor, leia o CONTRIBUTING.md para obter detalhes sobre nosso código de conduta e o processo para nos enviar pull requests.
+📌 Versão
+Usamos SemVer para controle de versão. Para as versões disponíveis, observe as tags neste repositório.
+✒️ Autores
+
+Igor Almeida Dos Santos - Trabalho Inicial - GitHub
+
+Veja também a lista de colaboradores que participaram deste projeto.
+📄 Licença
+Este projeto está sob a licença MIT - veja o arquivo LICENSE para detalhes.
+🎁 Expressões de gratidão
+
+Conte a outras pessoas sobre este projeto 📢
+Mencione o projeto em conferências ou meetups de cripto e trading algorítmico
+Apoie o desenvolvimento com doações em cripto
+Contribua com código, testes e documentação
 
 ⚠️ Aviso de Risco
 O trading de criptomoedas envolve riscos significativos e pode resultar em perda de capital. Este software é fornecido "como está", sem garantias. Use por sua conta e risco e sempre teste em ambiente de papel antes de implementar com fundos reais.
 
-<div align="center">
-    <p>
-        <strong>Neural Crypto Bot</strong> — Trading algorítmico de alta performance para criptomoedas
-    </p>
-</div>
+⌨️ com ❤️ por Igor Almeida Dos Santos 😊
