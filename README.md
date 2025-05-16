@@ -1,19 +1,29 @@
 # Neural Crypto Bot
 Bot de trading avançado com inteligência artificial para mercados de criptomoedas, desenvolvido com arquitetura moderna e práticas de engenharia de elite. Utiliza técnicas de machine learning para maximizar ganhos e minimizar perdas em mercados voláteis.
-🚀 Começando
-Essas instruções permitirão que você obtenha uma cópia do projeto em operação na sua máquina local para fins de desenvolvimento e teste.
-Consulte Implantação para saber como implantar o projeto em um ambiente de produção.
-📋 Pré-requisitos
+
+## 🚀 Começando
+Essas instruções permitirão que você obtenha uma cópia do projeto em operação na sua máquina local para fins de desenvolvimento e teste. Consulte Implantação para saber como implantar o projeto em um ambiente de produção.
+
+## 📋 Pré-requisitos
 Para instalar e executar o Neural Crypto Bot, você precisará:
 
-Python 3.11+
-Docker e Docker Compose
-Git
-Poetry (gerenciador de dependências Python)
-Chaves de API de exchanges para trading real
+- Python 3.11+
+~~~cmd
+# Baixar o instalador do Python do site oficial
+# URL: https://www.python.org/downloads/
 
-bash# Verificar versão do Python
-python --version  # Deve ser 3.11 ou superior
+# Verificar a instalação (em CMD)
+python --version
+
+# Certifique-se de marcar a opção "Add Python to PATH" durante a instalação
+~~~
+- Docker e Docker Compose
+- Git
+- Poetry (gerenciador de dependências Python)
+- Chaves de API de exchanges para trading real
+
+# Verificar versão do Python
+python --version  #Deve ser 3.11 ou superior
 
 # Verificar Docker
 docker --version
