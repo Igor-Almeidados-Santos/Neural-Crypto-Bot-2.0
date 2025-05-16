@@ -1,4 +1,4 @@
-Neural Crypto Bot
+# Neural Crypto Bot
 Bot de trading avançado com inteligência artificial para mercados de criptomoedas, desenvolvido com arquitetura moderna e práticas de engenharia de elite. Utiliza técnicas de machine learning para maximizar ganhos e minimizar perdas em mercados voláteis.
 🚀 Começando
 Essas instruções permitirão que você obtenha uma cópia do projeto em operação na sua máquina local para fins de desenvolvimento e teste.
