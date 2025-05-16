@@ -1,7 +1,7 @@
 #!/bin/bash
 # setup_configs.sh
 
-echo "=== Configurando arquivos de ambiente para o Trading Bot ==="
+echo "=== Configurando arquivos de ambiente para o Neural Crypto Bot ==="
 
 # Cria .env.example
 echo "Criando .env.example..."
@@ -13,7 +13,7 @@ LOG_LEVEL=INFO
 TIMEZONE=UTC
 
 # Configurações de banco de dados
-DATABASE_URL=postgresql://tradingbot:password@localhost:5432/tradingbot
+DATABASE_URL=postgresql://neuralbot:password@localhost:5432/neuralcryptobot
 DATABASE_POOL_SIZE=20
 DATABASE_MAX_OVERFLOW=10
 
@@ -23,7 +23,7 @@ REDIS_PASSWORD=
 
 # Kafka
 KAFKA_BOOTSTRAP_SERVERS=localhost:9092
-KAFKA_CONSUMER_GROUP=tradingbot-group
+KAFKA_CONSUMER_GROUP=ncb-group
 KAFKA_AUTO_OFFSET_RESET=earliest
 
 # Segurança
@@ -76,7 +76,7 @@ cat > .pre-commit-config.yaml << EOF
 # .pre-commit-config.yaml
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v4.5.0
     hooks:
     -   id: trailing-whitespace
     -   id: end-of-file-fixer
@@ -87,92 +87,43 @@ repos:
     -   id: check-merge-conflict
 
 -   repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.286
+    rev: v0.1.11
     hooks:
     -   id: ruff
         args: [--fix, --exit-non-zero-on-fix]
 
 -   repo: https://github.com/psf/black
-    rev: 23.7.0
+    rev: 23.12.1
     hooks:
     -   id: black
         language_version: python3.11
 
 -   repo: https://github.com/pycqa/isort
-    rev: 5.12.0
+    rev: 5.13.2
     hooks:
     -   id: isort
         name: isort (python)
 
 -   repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.5.1
+    rev: v1.8.0
     hooks:
     -   id: mypy
         additional_dependencies: [
             "types-requests",
             "types-PyYAML",
             "types-python-dateutil",
-            "pydantic>=2.0.0",
+            "pydantic>=2.5.0",
         ]
 EOF
 
-# Cria README.md
-echo "Criando README.md..."
+# Cria README.md simples (vamos criar um mais completo posteriormente)
+echo "Criando README.md básico..."
 cat > README.md << EOF
-# Advanced Cryptocurrency Trading Bot
+# Neural Crypto Bot
 
 Um bot de trading de criptomoedas avançado com recursos de ML, desenvolvido com arquitetura moderna e práticas de engenharia de elite.
 
-## Características
-
-- Arquitetura modular baseada em Domain-Driven Design
-- Integração com múltiplas exchanges via CCXT
-- Processamento de dados e sinais em tempo real
-- Modelos de ML avançados para previsão de mercado
-- Estratégias de trading configuráveis e extensíveis
-- Sistema robusto de gestão de risco
-- Análise de performance e visualização de dados
-- API REST/GraphQL para interação externa
-
-## Requisitos
-
-- Python 3.11+
-- Docker e Docker Compose
-- Poetry para gerenciamento de dependências
-
-## Instalação
-
-\`\`\`bash
-# Clone o repositório
-git clone https://github.com/your-org/crypto-trading-bot.git
-cd crypto-trading-bot
-
-# Instale as dependências
-./scripts/setup_poetry.sh
-
-# Configure as variáveis de ambiente
-cp .env.example .env
-# Edite o arquivo .env com suas configurações
-
-# Inicie os serviços
-./scripts/start_docker.sh
-\`\`\`
-
-## Uso
-
-[Documentação de uso detalhada]
-
-## Arquitetura
-
-[Descrição da arquitetura do sistema]
-
-## Contribuição
-
-[Diretrizes para contribuição]
-
-## Licença
-
-MIT
+_Detalhes completos serão adicionados posteriormente._
 EOF
 
 echo "✅ Configuração de ambiente concluída com sucesso!"

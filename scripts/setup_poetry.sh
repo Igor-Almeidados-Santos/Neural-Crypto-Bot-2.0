@@ -1,13 +1,39 @@
 #!/bin/bash
 # setup_poetry.sh
 
-echo "=== Configurando Poetry para o Trading Bot ==="
+echo "=== Configurando Poetry para o Neural Crypto Bot ==="
+
+# Detectar sistema operacional
+OS="$(uname -s)"
+case "${OS}" in
+    Linux*)     OS_TYPE=Linux;;
+    Darwin*)    OS_TYPE=Mac;;
+    MINGW*|MSYS*|CYGWIN*)    OS_TYPE=Windows;;
+    *)          OS_TYPE="UNKNOWN:${OS}"
+esac
+
+echo "Sistema operacional detectado: $OS_TYPE"
 
 # Verifica se o Poetry está instalado
 if ! command -v poetry &> /dev/null; then
     echo "Instalando Poetry..."
-    curl -sSL https://install.python-poetry.org | python3 -
-    export PATH="$HOME/.local/bin:$PATH"
+    if [ "$OS_TYPE" = "Windows" ]; then
+        # No Windows, é melhor usar o instalador oficial do Poetry
+        echo "Por favor, execute o seguinte comando no PowerShell como administrador:"
+        echo "(Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | python -"
+        read -p "Pressione Enter após instalar o Poetry..." dummy
+    else
+        # Linux ou Mac
+        curl -sSL https://install.python-poetry.org | python3 -
+        export PATH="$HOME/.local/bin:$PATH"
+    fi
+
+    # Verifica se a instalação foi bem-sucedida
+    if ! command -v poetry &> /dev/null; then
+        echo "Falha na instalação automática do Poetry."
+        echo "Por favor, instale manualmente seguindo as instruções em https://python-poetry.org/docs/#installation"
+        exit 1
+    fi
 else
     echo "Poetry já está instalado."
 fi
@@ -22,7 +48,7 @@ cat > pyproject.toml << EOF
 name = "Neural-Crypto-Bot"
 version = "1.0.0"
 description = "Advanced cryptocurrency trading bot with ML capabilities"
-authors = ["Igor Almeida Dos Santos <igor.almeidasantos2020@gmail.com.com>"]
+authors = ["Igor Almeida Dos Santos <igor.almeidasantos2020@gmail.com>"]
 readme = "README.md"
 license = "MIT"
 packages = [{include = "src"}]
@@ -31,98 +57,98 @@ packages = [{include = "src"}]
 python = ">=3.11,<3.12"
 
 # APIs e frameworks
-fastapi = "^0.103.1"
-uvicorn = {extras = ["standard"], version = "^0.23.2"}
-starlette = "^0.27.0"
-graphql-core = "^3.2.3"
-strawberry-graphql = "^0.195.0"
-pydantic = "^2.3.0"
+fastapi = "^0.109.2"
+uvicorn = {extras = ["standard"], version = "^0.27.0.post1"}
+starlette = "^0.36.3"
+graphql-core = "^3.2.4"
+strawberry-graphql = "^0.219.1"
+pydantic = "^2.6.0"
+pydantic-settings = "^2.1.0"
 
 # Comunicação assíncrona e concorrência
 asyncio = "^3.4.3"
-httpx = "^0.24.1"
-grpcio = "^1.57.0"
-protobuf = "^4.24.3"
-websockets = "^11.0.3"
+httpx = "^0.26.0"
+grpcio = "^1.60.1"
+protobuf = "^4.25.2"
+websockets = "^12.0"
 
 # Processamento de dados e análise numérica
-numpy = "^1.24.3"
-scipy = "^1.11.2"
-pandas = "^2.1.0"
-polars = "^0.19.0"
-numba = "^0.57.1"
-pyarrow = "^13.0.0"
+numpy = "^1.26.3"
+scipy = "^1.12.0"
+pandas = "^2.2.0"
+polars = "^0.20.6"
+numba = "^0.58.1"
+pyarrow = "^14.0.2"
 
 # Machine Learning
-scikit-learn = "^1.3.0"
-pytorch-lightning = "^2.0.9"
-torch = "^2.0.1"
-transformers = "^4.33.1"
-xgboost = "^1.7.6"
-optuna = "^3.3.0"
-mlflow = "^2.7.1"
-ray = {extras = ["tune"], version = "^2.6.3"}
-tensorboard = "^2.14.0"
+scikit-learn = "^1.4.0"
+pytorch-lightning = "^2.2.0.post0"
+torch = "^2.2.0"
+transformers = "^4.37.2"
+xgboost = "^2.0.3"
+optuna = "^3.5.0"
+mlflow = "^2.10.0"
+ray = {extras = ["tune"], version = "^2.9.0"}
+tensorboard = "^2.15.1"
 
 # Processamento de séries temporais
-statsmodels = "^0.14.0"
-prophet = "^1.1.4"
-tslearn = "^0.6.2"
+statsmodels = "^0.14.1"
+prophet = "^1.1.5"
+tslearn = "^0.6.3"
 
 # Infraestrutura e armazenamento de dados
-sqlalchemy = "^2.0.20"
-alembic = "^1.12.0"
-psycopg2-binary = "^2.9.7"
-redis = "^5.0.0"
-pymongo = "^4.5.0"
-arctic = "^1.79.4"
+sqlalchemy = "^2.0.25"
+alembic = "^1.13.1"
+psycopg2-binary = "^2.9.9"
+redis = "^5.0.1"
+pymongo = "^4.6.1"
+arctic = "^1.79.5"
 kafka-python = "^2.0.2"
-confluent-kafka = "^2.2.0"
+confluent-kafka = "^2.3.0"
 
 # Trading e Exchange APIs
-ccxt = "^3.1.40"
+ccxt = "^4.1.83"
 
 # Segurança e autenticação
 pyjwt = "^2.8.0"
 passlib = "^1.7.4"
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
-cryptography = "^41.0.3"
+cryptography = "^41.0.6"
 
 # Observabilidade e logging
-opentelemetry-api = "^1.19.0"
-opentelemetry-sdk = "^1.19.0"
-prometheus-client = "^0.17.1"
-structlog = "^23.1.0"
+opentelemetry-api = "^1.21.0"
+opentelemetry-sdk = "^1.21.0"
+prometheus-client = "^0.19.0"
+structlog = "^23.2.0"
 python-json-logger = "^2.0.7"
 
 # Utilitários
-python-dotenv = "^1.0.0"
-pydantic-settings = "^2.0.3"
+python-dotenv = "^1.0.1"
 tenacity = "^8.2.3"
-pytz = "^2023.3"
+pytz = "^2024.1"
 click = "^8.1.7"
 tqdm = "^4.66.1"
 
 # Visualização
-matplotlib = "^3.7.2"
-seaborn = "^0.12.2"
-plotly = "^5.16.1"
-bokeh = "^3.2.2"
+matplotlib = "^3.8.2"
+seaborn = "^0.13.1"
+plotly = "^5.18.0"
+bokeh = "^3.3.2"
 
 [tool.poetry.group.dev.dependencies]
 # Testes
-pytest = "^7.4.0"
-pytest-asyncio = "^0.21.1"
+pytest = "^8.0.0"
+pytest-asyncio = "^0.23.3"
 pytest-cov = "^4.1.0"
-hypothesis = "^6.82.2"
+hypothesis = "^6.92.6"
 
 # Desenvolvimento
-black = "^23.7.0"
-flake8 = "^6.1.0"
-mypy = "^1.5.1"
-isort = "^5.12.0"
-pre-commit = "^3.3.3"
-ruff = "^0.0.286"
+black = "^24.1.1"
+flake8 = "^7.0.0"
+mypy = "^1.8.0"
+isort = "^5.13.2"
+pre-commit = "^3.6.0"
+ruff = "^0.2.0"
 
 [build-system]
 requires = ["poetry-core"]
@@ -170,6 +196,12 @@ EOF
 
 # Instala as dependências
 echo "Instalando dependências com Poetry..."
-poetry install
+if [ "$OS_TYPE" = "Windows" ]; then
+    # No Windows, o comando pode ser diferente
+    poetry install --no-root
+else
+    # Linux ou Mac
+    poetry install
+fi
 
 echo "✅ Poetry configurado com sucesso!"

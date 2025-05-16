@@ -3,7 +3,7 @@
 
 set -e  # Encerra o script se algum comando falhar
 
-echo "=== Iniciando instalação do Trading Bot ==="
+echo "=== Iniciando instalação do Neural Crypto Bot ==="
 
 # Executa scripts na ordem correta
 echo "Passo 1: Verificando pré-requisitos..."

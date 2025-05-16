@@ -1,7 +1,18 @@
 #!/bin/bash
 # setup_docker.sh
 
-echo "=== Configurando Docker para o Trading Bot ==="
+echo "=== Configurando Docker para o Neural Crypto Bot ==="
+
+# Detectar sistema operacional
+OS="$(uname -s)"
+case "${OS}" in
+    Linux*)     OS_TYPE=Linux;;
+    Darwin*)    OS_TYPE=Mac;;
+    MINGW*|MSYS*|CYGWIN*)    OS_TYPE=Windows;;
+    *)          OS_TYPE="UNKNOWN:${OS}"
+esac
+
+echo "Sistema operacional detectado: $OS_TYPE"
 
 # Cria diretório para Dockerfiles
 mkdir -p deployment/docker
@@ -42,7 +53,7 @@ WORKDIR \$PYSETUP_PATH
 COPY pyproject.toml poetry.lock* ./
 
 # Instalação das dependências do projeto
-RUN poetry install --no-dev --no-root
+RUN poetry install --without dev --no-root
 
 # Imagem final
 FROM python:3.11-slim as production
@@ -115,7 +126,7 @@ WORKDIR \$PYSETUP_PATH
 COPY pyproject.toml poetry.lock* ./
 
 # Instalação das dependências do projeto
-RUN poetry install --no-dev --no-root
+RUN poetry install --without dev --no-root
 
 # Imagem final
 FROM python:3.11-slim as production
@@ -185,7 +196,7 @@ WORKDIR \$PYSETUP_PATH
 COPY pyproject.toml poetry.lock* ./
 
 # Instalação das dependências do projeto
-RUN poetry install --no-dev --no-root
+RUN poetry install --without dev --no-root
 
 # Imagem final
 FROM python:3.11-slim as production
@@ -256,7 +267,7 @@ WORKDIR \$PYSETUP_PATH
 COPY pyproject.toml poetry.lock* ./
 
 # Instalação das dependências do projeto
-RUN poetry install --no-dev --no-root
+RUN poetry install --without dev --no-root
 
 # Imagem final
 FROM python:3.11-slim as production
@@ -305,16 +316,21 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - postgres
-      - redis
-      - kafka
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
     environment:
-      - DATABASE_URL=postgresql://tradingbot:password@postgres:5432/tradingbot
+      - DATABASE_URL=postgresql://neuralbot:password@postgres:5432/neuralcryptobot
       - REDIS_URL=redis://redis:6379/0
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
     networks:
-      - tradingbot-network
+      - neuralbot-network
     restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
 
   # Serviço de coleta de dados
   collector:
@@ -322,14 +338,18 @@ services:
       context: .
       dockerfile: deployment/docker/Dockerfile.collector
     depends_on:
-      - postgres
-      - kafka
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
     environment:
-      - DATABASE_URL=postgresql://tradingbot:password@postgres:5432/tradingbot
+      - DATABASE_URL=postgresql://neuralbot:password@postgres:5432/neuralcryptobot
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
     networks:
-      - tradingbot-network
+      - neuralbot-network
     restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
 
   # Serviço de execução de ordens
   execution:
@@ -337,16 +357,21 @@ services:
       context: .
       dockerfile: deployment/docker/Dockerfile.execution
     depends_on:
-      - postgres
-      - redis
-      - kafka
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
     environment:
-      - DATABASE_URL=postgresql://tradingbot:password@postgres:5432/tradingbot
+      - DATABASE_URL=postgresql://neuralbot:password@postgres:5432/neuralcryptobot
       - REDIS_URL=redis://redis:6379/0
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
     networks:
-      - tradingbot-network
+      - neuralbot-network
     restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
 
   # Serviço de treinamento de modelos
   training:
@@ -354,48 +379,61 @@ services:
       context: .
       dockerfile: deployment/docker/Dockerfile.training
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
-      - DATABASE_URL=postgresql://tradingbot:password@postgres:5432/tradingbot
+      - DATABASE_URL=postgresql://neuralbot:password@postgres:5432/neuralcryptobot
       - REDIS_URL=redis://redis:6379/0
       - MODEL_STORAGE_PATH=/app/models
     volumes:
       - model-storage:/app/models
+      - ./logs:/app/logs
     networks:
-      - tradingbot-network
+      - neuralbot-network
     restart: unless-stopped
 
   # Banco de dados PostgreSQL com TimescaleDB
   postgres:
-    image: timescale/timescaledb:latest-pg14
+    image: timescale/timescaledb:latest-pg16
     ports:
       - "5432:5432"
     environment:
-      - POSTGRES_USER=tradingbot
+      - POSTGRES_USER=neuralbot
       - POSTGRES_PASSWORD=password
-      - POSTGRES_DB=tradingbot
+      - POSTGRES_DB=neuralcryptobot
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:
-      - tradingbot-network
+      - neuralbot-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U neuralbot -d neuralcryptobot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # Redis para cache e armazenamento em memória
   redis:
-    image: redis:7.0-alpine
+    image: redis:7.2-alpine
     ports:
       - "6379:6379"
     volumes:
       - redis-data:/data
     networks:
-      - tradingbot-network
+      - neuralbot-network
     command: redis-server --appendonly yes
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # Kafka para mensageria
   kafka:
-    image: confluentinc/cp-kafka:7.3.0
+    image: confluentinc/cp-kafka:7.5.1
     ports:
       - "9092:9092"
     environment:
@@ -408,31 +446,77 @@ services:
       - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
       - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     networks:
-      - tradingbot-network
+      - neuralbot-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   # Zookeeper para Kafka
   zookeeper:
-    image: confluentinc/cp-zookeeper:7.3.0
+    image: confluentinc/cp-zookeeper:7.5.1
     ports:
       - "2181:2181"
     environment:
       - ZOOKEEPER_CLIENT_PORT=2181
       - ZOOKEEPER_TICK_TIME=2000
     networks:
-      - tradingbot-network
+      - neuralbot-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "echo srvr | nc localhost 2181 | grep Mode"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Grafana para visualização de dados
+  grafana:
+    image: grafana/grafana:10.2.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=neuralbot
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - neuralbot-network
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  # Prometheus para coleta de métricas
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deployment/prometheus:/etc/prometheus
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    networks:
+      - neuralbot-network
     restart: unless-stopped
 
 networks:
-  tradingbot-network:
+  neuralbot-network:
     driver: bridge
 
 volumes:
   postgres-data:
   redis-data:
   model-storage:
+  grafana-data:
+  prometheus-data:
 EOF
 
 echo "✅ Configuração Docker concluída com sucesso!"
