@@ -18,10 +18,16 @@ echo "Sistema operacional detectado: $OS_TYPE"
 if ! command -v poetry &> /dev/null; then
     echo "Instalando Poetry..."
     if [ "$OS_TYPE" = "Windows" ]; then
-        # No Windows, é melhor usar o instalador oficial do Poetry
-        echo "Por favor, execute o seguinte comando no PowerShell como administrador:"
-        echo "(Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | python -"
-        read -p "Pressione Enter após instalar o Poetry..." dummy
+        # No Windows, primeiro tentamos verificar se o Poetry existe em locais comuns
+        if [ -f "$APPDATA/Python/Scripts/poetry.exe" ] || [ -f "$USERPROFILE/AppData/Roaming/Python/Scripts/poetry.exe" ]; then
+            echo "Poetry encontrado, mas não está no PATH. Adicionando ao PATH temporariamente..."
+            export PATH="$APPDATA/Python/Scripts:$USERPROFILE/AppData/Roaming/Python/Scripts:$PATH"
+        else
+            # Se não encontrado, solicitar instalação manual
+            echo "Por favor, execute o seguinte comando no PowerShell como administrador:"
+            echo "(Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | python -"
+            read -p "Pressione Enter após instalar o Poetry..." dummy
+        fi
     else
         # Linux ou Mac
         curl -sSL https://install.python-poetry.org | python3 -
@@ -75,7 +81,7 @@ websockets = "^12.0"
 # Processamento de dados e análise numérica
 numpy = "^1.26.3"
 scipy = "^1.12.0"
-pandas = "^2.2.0"
+pandas = ">=1.1.5,<2.0.0" 
 polars = "^0.20.6"
 numba = "^0.58.1"
 pyarrow = "^14.0.2"
@@ -102,7 +108,7 @@ alembic = "^1.13.1"
 psycopg2-binary = "^2.9.9"
 redis = "^5.0.1"
 pymongo = "^4.6.1"
-arctic = "^1.79.5"
+arcticdb = "^1.4.0"
 kafka-python = "^2.0.2"
 confluent-kafka = "^2.3.0"
 
