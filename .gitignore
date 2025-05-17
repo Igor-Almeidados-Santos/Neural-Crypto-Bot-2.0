@@ -23,3 +23,5 @@ ENV/
 logs/
 backups/
 *.log
+
+poetry.lock
