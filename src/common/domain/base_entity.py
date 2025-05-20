@@ -1,3 +1,8 @@
+"""
+BaseEntity é a classe base para todas as entidades de domínio no sistema.
+
+Fornece funcionalidades comuns como id, timestamps e métodos para conversão.
+"""
 from abc import ABC
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -27,8 +32,16 @@ class BaseEntity(ABC):
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'BaseEntity':
         """Create entity from dictionary."""
+        created_at = None
+        if data.get('created_at'):
+            created_at = datetime.fromisoformat(data.get('created_at'))
+            
+        updated_at = None
+        if data.get('updated_at'):
+            updated_at = datetime.fromisoformat(data.get('updated_at'))
+            
         return cls(
             id=data.get('id'),
-            created_at=datetime.fromisoformat(data.get('created_at')) if data.get('created_at') else None,
-            updated_at=datetime.fromisoformat(data.get('updated_at')) if data.get('updated_at') else None
+            created_at=created_at,
+            updated_at=updated_at
         )

@@ -88,6 +88,7 @@ matplotlib = "^3.8.2"
 seaborn = "^0.13.1"
 plotly = "^5.18.0"
 bokeh = "^3.3.2"
+opentelemetry-instrumentation-fastapi = "^0.54b1"
 
 [tool.poetry.group.dev.dependencies]
 # Testes

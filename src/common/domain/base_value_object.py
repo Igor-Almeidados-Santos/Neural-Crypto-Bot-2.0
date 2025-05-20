@@ -1,6 +1,11 @@
+"""
+BaseValueObject é a classe base para todos os objetos de valor no sistema.
+
+Objetos de valor são imutáveis e não possuem identidade própria.
+"""
 from abc import ABC
 from dataclasses import dataclass
-from typing import Dict, Any, TypeVar
+from typing import Any, Dict, TypeVar
 
 T = TypeVar('T', bound='BaseValueObject')
 
