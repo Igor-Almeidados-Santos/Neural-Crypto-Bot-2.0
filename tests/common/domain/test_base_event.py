@@ -6,8 +6,17 @@ from src.common.domain.base_event import BaseEvent
 
 class TestEvent(BaseEvent):
     """A test event class."""
-    def __init__(self, id=None, timestamp=None, aggregate_id=None, data=None):
-        super().__init__(id, timestamp, aggregate_id)
+    def __init__(self, id=None, timestamp=None, aggregate_id=None, data=None, version=1):
+        # Garantir valores padrão corretos
+        id = id or str(uuid.uuid4())
+        timestamp = timestamp or datetime.utcnow()
+        
+        super().__init__(
+            id=id, 
+            timestamp=timestamp,
+            aggregate_id=aggregate_id,
+            version=version
+        )
         self.data = data
         
     def to_dict(self):
@@ -17,8 +26,23 @@ class TestEvent(BaseEvent):
     
     @classmethod
     def from_dict(cls, data):
-        event = super().from_dict(data)
-        event.data = data.get('data')
+        return cls(
+            id=data.get('id') or str(uuid.uuid4()),
+            timestamp=datetime.fromisoformat(data.get('timestamp')) if data.get('timestamp') else datetime.utcnow(),
+            aggregate_id=data.get('aggregate_id'),
+            data=data.get('data'),
+            version=data.get('version', 1)
+        )
+    
+    @classmethod
+    def from_dict(cls, data):
+        event = cls(
+            id=data.get('id'),
+            timestamp=datetime.fromisoformat(data.get('timestamp')) if data.get('timestamp') else None,
+            aggregate_id=data.get('aggregate_id'),
+            data=data.get('data'),
+            version=data.get('version', 1)
+        )
         return event
 
 class TestBaseEvent:

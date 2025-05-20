@@ -10,27 +10,27 @@ from datetime import datetime, timezone
 import uuid
 from src.common.domain.base_event import BaseEvent
 
-class TestEvent(BaseEvent):
-    """A test event class."""
-    def __init__(self, id=None, timestamp=None, aggregate_id=None, data=None, version=1):
-        super().__init__(
-            id=id or str(uuid.uuid4()),
-            timestamp=timestamp or datetime.utcnow(),
-            aggregate_id=aggregate_id,
-            version=version
-        )
-        self.data = data
+class TestEntity(BaseEntity):
+    """A test entity class."""
+    def __init__(self, id=None, created_at=None, updated_at=None, name=None):
+        # Garantir valores padrão corretos
+        id = id or str(uuid.uuid4())
+        created_at = created_at or datetime.utcnow()
+        updated_at = updated_at or datetime.utcnow()
+        
+        super().__init__(id, created_at, updated_at)
+        self.name = name
         
     def to_dict(self):
         data = super().to_dict()
-        data['data'] = self.data
+        data['name'] = self.name
         return data
     
     @classmethod
     def from_dict(cls, data):
-        event = super().from_dict(data)
-        event.data = data.get('data')
-        return event
+        entity = super().from_dict(data)
+        entity.name = data.get('name')
+        return entity
 
 class TestBaseEntity:
     """Tests for the BaseEntity class."""

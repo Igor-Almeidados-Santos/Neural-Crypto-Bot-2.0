@@ -11,6 +11,7 @@ import uuid
 
 
 @dataclass
+@dataclass
 class BaseEntity(ABC):
     """Base class for all domain entities."""
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
