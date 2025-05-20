@@ -521,3 +521,34 @@ class Validator:
                 field,
                 value
             )
+
+    def validate_trading_pair(pair: str) -> bool:
+        """
+        Validates if a trading pair has the correct format (e.g. 'BTC/USDT').
+        
+        Args:
+            pair: The trading pair to validate.
+            
+        Returns:
+            True if valid, False otherwise.
+        """
+        if not isinstance(pair, str):
+            return False
+            
+        # Check if the pair has the base/quote format
+        parts = pair.split('/')
+        if len(parts) != 2:
+            return False
+            
+        base, quote = parts
+        
+        # Check if base and quote are non-empty strings
+        if not base or not quote:
+            return False
+            
+        # Check if base and quote contain only valid characters
+        valid_chars = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+        if not all(c in valid_chars for c in base) or not all(c in valid_chars for c in quote):
+            return False
+            
+        return True

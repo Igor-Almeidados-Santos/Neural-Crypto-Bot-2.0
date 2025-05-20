@@ -4,22 +4,33 @@ from datetime import datetime, timezone
 import uuid
 from src.common.domain.base_entity import BaseEntity
 
-class TestEntity(BaseEntity):
-    """A test entity class."""
-    def __init__(self, id=None, created_at=None, updated_at=None, name=None):
-        super().__init__(id=id, created_at=created_at, updated_at=updated_at)
-        self.name = name
+# tests/common/domain/test_base_event.py
+import pytest
+from datetime import datetime, timezone
+import uuid
+from src.common.domain.base_event import BaseEvent
+
+class TestEvent(BaseEvent):
+    """A test event class."""
+    def __init__(self, id=None, timestamp=None, aggregate_id=None, data=None, version=1):
+        super().__init__(
+            id=id or str(uuid.uuid4()),
+            timestamp=timestamp or datetime.utcnow(),
+            aggregate_id=aggregate_id,
+            version=version
+        )
+        self.data = data
         
     def to_dict(self):
         data = super().to_dict()
-        data['name'] = self.name
+        data['data'] = self.data
         return data
     
     @classmethod
     def from_dict(cls, data):
-        entity = super().from_dict(data)
-        entity.name = data.get('name')
-        return entity
+        event = super().from_dict(data)
+        event.data = data.get('data')
+        return event
 
 class TestBaseEntity:
     """Tests for the BaseEntity class."""

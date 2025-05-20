@@ -12,6 +12,7 @@ from pathlib import Path
 import logging
 from dotenv import load_dotenv
 import yaml
+from pydantic import BaseModel
 
 # Define type variable for type hints
 T = TypeVar('T')
@@ -24,6 +25,25 @@ logger = logging.getLogger(__name__)
 
 # Cache for config values
 _config_cache: Dict[str, Any] = {}
+
+class Settings(BaseModel):
+    """Settings model for application configuration."""
+    # General settings
+    LOG_LEVEL: str = "INFO"
+    ENVIRONMENT: str = "development"
+    DEBUG: bool = True
+    
+    # Security settings
+    SECRET_KEY: str = "your-secret-key-here"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRATION_SECONDS: int = 86400
+    
+    # Database settings
+    DATABASE_URL: str = "postgresql://neuralbot:password@localhost:5432/neuralcryptobot"
+    
+    # API settings
+    API_HOST: str = "0.0.0.0"
+    API_PORT: int = 8000
 
 def get_config() -> Dict[str, Any]:
     """Get the application configuration.
@@ -65,6 +85,15 @@ def get_config() -> Dict[str, Any]:
     _config_cache = config
     
     return config
+
+def get_settings() -> Settings:
+    """Get application settings as a Pydantic model.
+    
+    Returns:
+        Settings object with application configuration.
+    """
+    config = get_config()
+    return Settings(**config)
 
 def get_config_value(key: str, default: Optional[T] = None) -> Union[str, T]:
     """Get a configuration value.

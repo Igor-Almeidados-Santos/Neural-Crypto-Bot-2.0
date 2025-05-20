@@ -41,7 +41,7 @@ class BaseEntity(ABC):
             updated_at = datetime.fromisoformat(data.get('updated_at'))
             
         return cls(
-            id=data.get('id'),
-            created_at=created_at,
-            updated_at=updated_at
+            id=data.get('id', str(uuid.uuid4())),
+            created_at=created_at or datetime.utcnow(),
+            updated_at=updated_at or datetime.utcnow()
         )
