@@ -178,15 +178,8 @@ class Validator:
     
     @staticmethod
     def is_date(value: Any) -> bool:
-        """Check if a value is a date object.
-        
-        Args:
-            value: The value to check.
-            
-        Returns:
-            True if the value is a date object, False otherwise.
-        """
-        return isinstance(value, date)
+        """Check if a value is a date object."""
+        return isinstance(value, date) and not isinstance(value, datetime)
     
     @staticmethod
     def is_uuid(value: Any) -> bool:

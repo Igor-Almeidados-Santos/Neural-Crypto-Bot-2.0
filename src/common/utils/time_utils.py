@@ -117,7 +117,7 @@ def parse_datetime(date_string: str) -> Optional[datetime]:
     for fmt in formats:
         try:
             dt = datetime.strptime(date_string, fmt)
-            return dt.replace(tzinfo=timezone.utc)
+            return dt.replace(tzinfo=timezone.utc)  # Adiciona timezone UTC
         except ValueError:
             continue
     

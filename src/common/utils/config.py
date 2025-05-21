@@ -151,15 +151,6 @@ def get_config_float(key: str, default: Optional[float] = None) -> float:
         return cast(float, default)
 
 def get_config_bool(key: str, default: Optional[bool] = None) -> bool:
-    """Get a boolean configuration value.
-    
-    Args:
-        key: The key of the value to get.
-        default: The default value to return if the key is not found or cannot be converted to a boolean.
-        
-    Returns:
-        The configuration value as a boolean, or the default value if not found or cannot be converted.
-    """
     value = get_config_value(key, default)
     
     if value is None:
@@ -172,7 +163,12 @@ def get_config_bool(key: str, default: Optional[bool] = None) -> bool:
         return bool(value)
     
     if isinstance(value, str):
-        return value.lower() in ('true', 'yes', '1', 'y', 't')
+        if value.lower() in ('true', 'yes', '1', 'y', 't'):
+            return True
+        if value.lower() in ('false', 'no', '0', 'n', 'f'):
+            return False
+        logger.warning(f"Could not convert config value '{key}' to bool: {value}")
+        return cast(bool, default)
     
     logger.warning(f"Could not convert config value '{key}' to bool: {value}")
     return cast(bool, default)

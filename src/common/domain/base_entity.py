@@ -9,14 +9,20 @@ from datetime import datetime
 from typing import Optional, ClassVar, Dict, Any
 import uuid
 
-
-@dataclass
 @dataclass
 class BaseEntity(ABC):
     """Base class for all domain entities."""
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = None
+    updated_at: datetime = None
+
+    def __post_init__(self):
+        """Initialize timestamps if not provided."""
+        now = datetime.utcnow()
+        if self.created_at is None:
+            self.created_at = now
+        if self.updated_at is None:
+            self.updated_at = self.created_at
 
     def update(self):
         """Update the entity's updated_at timestamp."""

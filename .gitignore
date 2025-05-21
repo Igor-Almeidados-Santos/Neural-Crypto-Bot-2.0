@@ -24,4 +24,17 @@ logs/
 backups/
 *.log
 
+# Diretórios de dados e armazenamento
+/postgres-data/
+/redis-data/
+/model-storage/
+/grafana-data/
+/prometheus-data/
+
+# Arquivos de deployment
+/deployment/prometheus/
+
+# Arquivos gerados durante a execução
+coverage.xml
+
 poetry.lock
