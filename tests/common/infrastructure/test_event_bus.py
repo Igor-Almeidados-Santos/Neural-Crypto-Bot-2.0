@@ -10,12 +10,18 @@ from src.common.infrastructure.event_bus import InMemoryEventBus
 class TestEvent(BaseEvent):
     """A test event class."""
     def __init__(self, id=None, timestamp=None, aggregate_id=None, data=None):
+        # Garantir valores padrão corretos, especialmente para timestamp
+        timestamp = timestamp or datetime.utcnow()
         super().__init__(id, timestamp, aggregate_id)
         self.data = data
 
 class AnotherTestEvent(BaseEvent):
     """Another test event class."""
     def __init__(self, id=None, timestamp=None, aggregate_id=None, data=None):
+        # Garantir valores padrão corretos
+        id = id or str(uuid.uuid4())
+        timestamp = timestamp or datetime.utcnow()
+        
         super().__init__(id, timestamp, aggregate_id)
         self.data = data
 

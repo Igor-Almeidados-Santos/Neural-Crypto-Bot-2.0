@@ -1,4 +1,5 @@
 # tests/common/infrastructure/database/test_base_repository.py
+# tests/common/infrastructure/database/test_base_repository.py
 import pytest
 from typing import Dict, List, Optional, Any
 import asyncio
@@ -90,9 +91,8 @@ class TestBaseRepository:
         """Create a test repository."""
         return TestRepository()
     
-    @pytest.fixture
-    async def populated_repository(self, repository):
-        """Create a repository with some test entities."""
+    async def _create_populated_repository(self, repository):
+        """Helper method to populate a repository."""
         for i in range(10):
             entity = TestEntity(
                 name=f"Entity {i}",
@@ -103,48 +103,57 @@ class TestBaseRepository:
         return repository
     
     @pytest.mark.asyncio
-    async def test_find_by_id(self, populated_repository):
+    async def test_find_by_id(self, repository):
         """Test finding an entity by ID."""
+        # Populate the repository
+        populated_repo = await self._create_populated_repository(repository)
+        
         # Get all entities
-        entities = await populated_repository.find_all()
+        entities = await populated_repo.find_all()
         entity_id = entities[0].id
         
         # Find the entity by ID
-        found_entity = await populated_repository.find_by_id(entity_id)
+        found_entity = await populated_repo.find_by_id(entity_id)
         
         assert found_entity is not None
         assert found_entity.id == entity_id
     
     @pytest.mark.asyncio
-    async def test_find_all(self, populated_repository):
+    async def test_find_all(self, repository):
         """Test finding all entities."""
-        entities = await populated_repository.find_all()
+        # Populate the repository
+        populated_repo = await self._create_populated_repository(repository)
+        
+        entities = await populated_repo.find_all()
         
         assert len(entities) == 10
         
         # Test with limit
-        limited_entities = await populated_repository.find_all(limit=5)
+        limited_entities = await populated_repo.find_all(limit=5)
         assert len(limited_entities) == 5
         
         # Test with offset
-        offset_entities = await populated_repository.find_all(offset=5)
+        offset_entities = await populated_repo.find_all(offset=5)
         assert len(offset_entities) == 5
         
         # Test with limit and offset
-        paginated_entities = await populated_repository.find_all(limit=3, offset=5)
+        paginated_entities = await populated_repo.find_all(limit=3, offset=5)
         assert len(paginated_entities) == 3
     
     @pytest.mark.asyncio
-    async def test_find_by_criteria(self, populated_repository):
+    async def test_find_by_criteria(self, repository):
         """Test finding entities by criteria."""
+        # Populate the repository
+        populated_repo = await self._create_populated_repository(repository)
+        
         # Find entities with even values
-        even_entities = await populated_repository.find_by_criteria({"value": 2})
+        even_entities = await populated_repo.find_by_criteria({"value": 2})
         
         assert len(even_entities) == 1
         assert even_entities[0].value == 2
         
         # Find entities with a specific name
-        named_entities = await populated_repository.find_by_criteria({"name": "Entity 5"})
+        named_entities = await populated_repo.find_by_criteria({"name": "Entity 5"})
         
         assert len(named_entities) == 1
         assert named_entities[0].name == "Entity 5"
@@ -194,41 +203,47 @@ class TestBaseRepository:
         assert found_entity.value == 2
     
     @pytest.mark.asyncio
-    async def test_delete(self, populated_repository):
+    async def test_delete(self, repository):
         """Test deleting an entity."""
+        # Populate the repository
+        populated_repo = await self._create_populated_repository(repository)
+        
         # Get all entities
-        entities = await populated_repository.find_all()
+        entities = await populated_repo.find_all()
         entity_id = entities[0].id
         
         # Delete the entity
-        result = await populated_repository.delete(entity_id)
+        result = await populated_repo.delete(entity_id)
         
         assert result is True
         
         # Try to find the deleted entity
-        found_entity = await populated_repository.find_by_id(entity_id)
+        found_entity = await populated_repo.find_by_id(entity_id)
         
         assert found_entity is None
         
         # Try to delete a nonexistent entity
-        result = await populated_repository.delete("nonexistent_id")
+        result = await populated_repo.delete("nonexistent_id")
         
         assert result is False
     
     @pytest.mark.asyncio
-    async def test_count(self, populated_repository):
+    async def test_count(self, repository):
         """Test counting entities."""
+        # Populate the repository
+        populated_repo = await self._create_populated_repository(repository)
+        
         # Count all entities
-        count = await populated_repository.count()
+        count = await populated_repo.count()
         
         assert count == 10
         
         # Count entities with even values
-        even_count = await populated_repository.count({"value": 2})
+        even_count = await populated_repo.count({"value": 2})
         
         assert even_count == 1
         
         # Count entities with a specific name
-        named_count = await populated_repository.count({"name": "Entity 5"})
+        named_count = await populated_repo.count({"name": "Entity 5"})
         
         assert named_count == 1
