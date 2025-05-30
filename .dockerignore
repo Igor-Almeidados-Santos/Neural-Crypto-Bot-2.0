@@ -1,0 +1,89 @@
+# Git
+.git
+.gitignore
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Node.js
+node_modules/
+npm-debug.log*
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Data and models
+data/
+models/
+*.h5
+*.pkl
+
+# Documentation
+docs/
+README.md
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Test coverage
+htmlcov/
+.coverage
+
+# Backup files
+*.bak
+*.backup
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Large files
+*.zip
+*.tar.gz
+*.rar
+
+# Docker build context exclusions
+deployment/
+scripts/
+.env*
+docker-compose*.yml
+Dockerfile*

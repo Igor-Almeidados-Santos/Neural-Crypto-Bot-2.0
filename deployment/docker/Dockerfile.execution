@@ -20,7 +20,6 @@ RUN apt-get update \
     && apt-get install --no-install-recommends -y \
     build-essential \
     curl \
-    libopenblas-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -50,7 +49,8 @@ RUN apt-get update \
     libpq5 \
     libopenblas0 \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*   
+    && rm -rf /var/lib/apt/lists/*
+
 # Cópia do ambiente virtual da etapa anterior
 COPY --from=python-base $VENV_PATH $VENV_PATH
 

@@ -124,6 +124,8 @@ cryptography = "^41.0.6"
 # Observabilidade e logging
 opentelemetry-api = "^1.21.0"
 opentelemetry-sdk = "^1.21.0"
+opentelemetry-instrumentation = "^0.54b1"
+opentelemetry-instrumentation-fastapi = "^0.54b1"
 prometheus-client = "^0.19.0"
 structlog = "^23.2.0"
 python-json-logger = "^2.0.7"

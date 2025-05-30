@@ -212,6 +212,7 @@ ENV PATH="\$VENV_PATH/bin:\$PATH"
 RUN apt-get update \\
     && apt-get install --no-install-recommends -y \\
     libpq5 \\
+    libopenblas0 \\
     && apt-get clean \\
     && rm -rf /var/lib/apt/lists/*
 
@@ -283,7 +284,7 @@ ENV PATH="\$VENV_PATH/bin:\$PATH"
 RUN apt-get update \\
     && apt-get install --no-install-recommends -y \\
     libpq5 \\
-    libopenblas-base \\
+    libopenblas0 \\
     && apt-get clean \\
     && rm -rf /var/lib/apt/lists/*
 
@@ -302,11 +303,103 @@ ENV ENVIRONMENT=production
 CMD ["python", "-m", "src.model_training.main"]
 EOF
 
-# Cria docker-compose.yml
+# Cria .dockerignore para reduzir o tamanho do contexto de build
+echo "Criando .dockerignore..."
+cat > .dockerignore << EOF
+# Git
+.git
+.gitignore
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*\$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Node.js
+node_modules/
+npm-debug.log*
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Data and models
+data/
+models/
+*.h5
+*.pkl
+
+# Documentation
+docs/
+README.md
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Test coverage
+htmlcov/
+.coverage
+
+# Backup files
+*.bak
+*.backup
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Large files
+*.zip
+*.tar.gz
+*.rar
+
+# Docker build context exclusions
+deployment/
+scripts/
+.env*
+docker-compose*.yml
+Dockerfile*
+EOF
+
+# Cria docker-compose.yml (sem a versão obsoleta)
 echo "Criando docker-compose.yml..."
 cat > docker-compose.yml << EOF
-version: '3.8'
-
 services:
   # Serviço de API
   api:
@@ -314,7 +407,7 @@ services:
       context: .
       dockerfile: deployment/docker/Dockerfile.api
     ports:
-      - "8000:8000"
+      - "8001:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -398,7 +491,7 @@ services:
   postgres:
     image: timescale/timescaledb:latest-pg16
     ports:
-      - "5432:5432"
+      - "5433:5432"
     environment:
       - POSTGRES_USER=neuralbot
       - POSTGRES_PASSWORD=password
@@ -521,3 +614,15 @@ volumes:
 EOF
 
 echo "✅ Configuração Docker concluída com sucesso!"
+echo ""
+echo "Principais correções aplicadas:"
+echo "- ✅ Corrigido libopenblas-base para libopenblas0"
+echo "- ✅ Adicionado .dockerignore para reduzir contexto de build"
+echo "- ✅ Removido 'version' obsoleto do docker-compose.yml"
+echo "- ✅ Configurado PostgreSQL na porta 5433 (externa)"
+echo "- ✅ Adicionado KAFKA_ZOOKEEPER_CONNECT"
+echo ""
+echo "Para aplicar as mudanças:"
+echo "1. Execute: docker-compose down"
+echo "2. Execute: docker system prune -f"
+echo "3. Execute: ./scripts/start_docker.sh"

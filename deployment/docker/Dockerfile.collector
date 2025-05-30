@@ -20,7 +20,6 @@ RUN apt-get update \
     && apt-get install --no-install-recommends -y \
     build-essential \
     curl \
-    libopenblas-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -44,7 +43,6 @@ ENV PYTHONUNBUFFERED=1 \
 
 ENV PATH="$VENV_PATH/bin:$PATH"
 
-# Instalação de dependências mínimas do sistema
 # Instalação de dependências mínimas do sistema
 RUN apt-get update \
     && apt-get install --no-install-recommends -y \
