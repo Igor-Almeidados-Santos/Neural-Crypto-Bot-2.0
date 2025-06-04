@@ -1,0 +1,340 @@
+# .github/workflows/ci.yml
+name: CI - Continuous Integration
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+  POETRY_VERSION: "1.7.1"
+  NODE_VERSION: "18"
+
+jobs:
+  code-quality:
+    name: Code Quality & Security
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Cache Poetry
+      uses: actions/cache@v3
+      with:
+        path: ~/.local
+        key: poetry-${{ runner.os }}-${{ env.POETRY_VERSION }}
+
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: ${{ env.POETRY_VERSION }}
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+
+    - name: Cache Dependencies
+      uses: actions/cache@v3
+      with:
+        path: .venv
+        key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+
+    - name: Install Dependencies
+      run: poetry install --no-interaction
+
+    - name: Code Formatting (Black)
+      run: poetry run black --check --diff src tests
+
+    - name: Import Sorting (isort)
+      run: poetry run isort --check-only --diff src tests
+
+    - name: Linting (Ruff)
+      run: poetry run ruff check src tests
+
+    - name: Type Checking (MyPy)
+      run: poetry run mypy src
+
+    - name: Security Scan (Bandit)
+      run: poetry run bandit -r src -f json -o bandit-report.json
+      continue-on-error: true
+
+    - name: Dependency Vulnerability Check
+      run: poetry run safety check --json --output safety-report.json
+      continue-on-error: true
+
+    - name: Upload Security Reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: security-reports
+        path: |
+          bandit-report.json
+          safety-report.json
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: code-quality
+    
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: ${{ env.POETRY_VERSION }}
+
+    - name: Install Dependencies
+      run: poetry install --no-interaction
+
+    - name: Run Unit Tests
+      run: |
+        poetry run pytest tests/unit \
+          --cov=src \
+          --cov-report=xml \
+          --cov-report=html \
+          --junitxml=pytest-report.xml \
+          -v
+
+    - name: Upload Coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+
+    - name: Upload Test Results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-results-${{ matrix.python-version }}
+        path: |
+          coverage.xml
+          htmlcov/
+          pytest-report.xml
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_USER: neuralbot
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: neuralcryptobot_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7.2-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: ${{ env.POETRY_VERSION }}
+
+    - name: Install Dependencies
+      run: poetry install --no-interaction
+
+    - name: Setup Test Environment
+      run: |
+        cp .env.example .env.test
+        echo "DATABASE_URL=postgresql://neuralbot:password@localhost:5432/neuralcryptobot_test" >> .env.test
+        echo "REDIS_URL=redis://localhost:6379/1" >> .env.test
+        echo "ENVIRONMENT=testing" >> .env.test
+
+    - name: Run Database Migrations
+      run: poetry run alembic upgrade head
+      env:
+        DATABASE_URL: postgresql://neuralbot:password@localhost:5432/neuralcryptobot_test
+
+    - name: Run Integration Tests
+      run: |
+        poetry run pytest tests/integration \
+          --cov=src \
+          --cov-append \
+          --cov-report=xml \
+          --junitxml=integration-report.xml \
+          -v
+      env:
+        DATABASE_URL: postgresql://neuralbot:password@localhost:5432/neuralcryptobot_test
+        REDIS_URL: redis://localhost:6379/1
+
+    - name: Upload Integration Test Results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: integration-test-results
+        path: |
+          coverage.xml
+          integration-report.xml
+
+  docker-build:
+    name: Docker Build & Security Scan
+    runs-on: ubuntu-latest
+    needs: code-quality
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Docker Images
+      run: |
+        docker build -f deployment/docker/Dockerfile.api -t ncb-api:test .
+        docker build -f deployment/docker/Dockerfile.collector -t ncb-collector:test .
+        docker build -f deployment/docker/Dockerfile.execution -t ncb-execution:test .
+        docker build -f deployment/docker/Dockerfile.training -t ncb-training:test .
+
+    - name: Run Trivy Security Scan
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'ncb-api:test'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy Results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+    - name: Test Docker Compose
+      run: |
+        docker compose -f docker-compose.test.yml up -d
+        sleep 30
+        docker compose -f docker-compose.test.yml ps
+        docker compose -f docker-compose.test.yml logs
+        docker compose -f docker-compose.test.yml down
+
+  performance-tests:
+    name: Performance & Load Tests
+    runs-on: ubuntu-latest
+    needs: integration-tests
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: ${{ env.POETRY_VERSION }}
+
+    - name: Install Dependencies
+      run: poetry install --no-interaction
+
+    - name: Setup Performance Test Environment
+      run: |
+        docker compose -f docker-compose.test.yml up -d postgres redis
+        sleep 10
+
+    - name: Run Performance Tests
+      run: |
+        poetry run python scripts/performance_test.py
+      env:
+        DATABASE_URL: postgresql://neuralbot:password@localhost:5432/neuralcryptobot_test
+        REDIS_URL: redis://localhost:6379/1
+
+    - name: Upload Performance Reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-reports
+        path: performance-*.json
+
+  build-status:
+    name: Build Status
+    runs-on: ubuntu-latest
+    needs: [code-quality, unit-tests, integration-tests, docker-build]
+    if: always()
+    
+    steps:
+    - name: Check Build Status
+      run: |
+        if [[ "${{ needs.code-quality.result }}" == "success" && \
+            "${{ needs.unit-tests.result }}" == "success" && \
+            "${{ needs.integration-tests.result }}" == "success" && \
+            "${{ needs.docker-build.result }}" == "success" ]]; then
+        echo "✅ All CI checks passed!"
+        exit 0
+        else
+        echo "❌ Some CI checks failed!"
+        echo "Code Quality: ${{ needs.code-quality.result }}"
+        echo "Unit Tests: ${{ needs.unit-tests.result }}"
+        echo "Integration Tests: ${{ needs.integration-tests.result }}"
+        echo "Docker Build: ${{ needs.docker-build.result }}"
+        exit 1
+        fi
+
+  notify:
+    name: Notify Results
+    runs-on: ubuntu-latest
+    needs: [build-status]
+    if: always() && github.event_name == 'push'
+    
+    steps:
+    - name: Notify Success
+      if: needs.build-status.result == 'success'
+      run: |
+        echo "🎉 CI Pipeline completed successfully!"
+        echo "Branch: ${{ github.ref_name }}"
+        echo "Commit: ${{ github.sha }}"
+
+    - name: Notify Failure
+      if: needs.build-status.result == 'failure'
+      run: |
+        echo "💥 CI Pipeline failed!"
+        echo "Branch: ${{ github.ref_name }}"
+        echo "Commit: ${{ github.sha }}"
+        echo "Please check the logs and fix the issues."

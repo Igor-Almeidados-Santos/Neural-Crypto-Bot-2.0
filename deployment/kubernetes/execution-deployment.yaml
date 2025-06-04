@@ -1,0 +1,383 @@
+# deployment/kubernetes/execution-deployment.yaml
+# Kubernetes deployment para Execution Service do Neural Crypto Bot 2.0
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: execution
+  namespace: neural-crypto-bot
+  labels:
+    app: neural-crypto-bot
+    component: execution
+    version: v2.0.0
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+    description: "Neural Crypto Bot Order Execution Service"
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: neural-crypto-bot
+      component: execution
+  template:
+    metadata:
+      labels:
+        app: neural-crypto-bot
+        component: execution
+        version: v2.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: neural-crypto-bot
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: execution
+        image: ghcr.io/your-username/neural-crypto-bot-execution:IMAGE_TAG
+        imagePullPolicy: Always
+        ports:
+        - name: metrics
+          containerPort: 8080
+          protocol: TCP
+        env:
+        - name: ENVIRONMENT
+          value: "ENVIRONMENT"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: SERVICE_TYPE
+          value: "execution"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: neural-crypto-bot-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: neural-crypto-bot-secrets
+              key: redis-url
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: "kafka:9092"
+        - name: KAFKA_CONSUMER_GROUP
+          value: "ncb-execution-group"
+        - name: BINANCE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: exchange-secrets
+              key: binance-api-key
+        - name: BINANCE_API_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: exchange-secrets
+              key: binance-api-secret
+        - name: COINBASE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: exchange-secrets
+              key: coinbase-api-key
+        - name: COINBASE_API_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: exchange-secrets
+              key: coinbase-api-secret
+        - name: KRAKEN_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: exchange-secrets
+              key: kraken-api-key
+        - name: KRAKEN_API_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: exchange-secrets
+              key: kraken-api-secret
+        # Trading Configuration
+        - name: MAX_POSITION_SIZE
+          value: "0.05"
+        - name: MAX_LEVERAGE
+          value: "2.0"
+        - name: MAX_DRAWDOWN_PERCENT
+          value: "5.0"
+        - name: RISK_FREE_RATE
+          value: "0.03"
+        # Execution Configuration
+        - name: ORDER_TIMEOUT_SECONDS
+          value: "30"
+        - name: MAX_RETRY_ATTEMPTS
+          value: "3"
+        - name: RETRY_DELAY_SECONDS
+          value: "2"
+        - name: EXECUTION_TIMEOUT
+          value: "30"
+        - name: SLIPPAGE_TOLERANCE
+          value: "0.005"  # 0.5%
+        - name: MIN_ORDER_SIZE_USD
+          value: "10"
+        - name: MAX_ORDER_SIZE_USD
+          value: "100000"
+        # Smart Routing Configuration
+        - name: SMART_ROUTING_ENABLED
+          value: "true"
+        - name: ICEBERG_ORDERS_ENABLED
+          value: "true"
+        - name: TWAP_ENABLED
+          value: "true"
+        # Risk Management
+        - name: DAILY_LOSS_LIMIT_PERCENT
+          value: "2.0"
+        - name: POSITION_SIZE_LIMITS_ENABLED
+          value: "true"
+        - name: CIRCUIT_BREAKER_ENABLED
+          value: "true"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import src.execution_service.health_check; src.execution_service.health_check.check()"
+          initialDelaySeconds: 45
+          periodSeconds: 45
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import src.execution_service.health_check; src.execution_service.health_check.check_ready()"
+          initialDelaySeconds: 20
+          periodSeconds: 20
+          timeoutSeconds: 8
+          failureThreshold: 3
+        startupProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import src.execution_service.health_check; src.execution_service.health_check.check()"
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 10
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: logs
+          mountPath: /app/logs
+        - name: execution-data
+          mountPath: /app/execution_data
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: config
+        configMap:
+          name: execution-config
+      - name: logs
+        emptyDir: {}
+      - name: execution-data
+        emptyDir:
+          sizeLimit: 500Mi
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 45
+      dnsPolicy: ClusterFirst
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: component
+                  operator: In
+                  values:
+                  - execution
+              topologyKey: kubernetes.io/hostname
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: execution
+  namespace: neural-crypto-bot
+  labels:
+    app: neural-crypto-bot
+    component: execution
+spec:
+  type: ClusterIP
+  ports:
+  - name: metrics
+    port: 8080
+    targetPort: metrics
+    protocol: TCP
+  selector:
+    app: neural-crypto-bot
+    component: execution
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: execution-config
+  namespace: neural-crypto-bot
+  labels:
+    app: neural-crypto-bot
+    component: execution
+data:
+  execution.yaml: |
+    execution:
+      algorithms:
+        iceberg:
+          enabled: true
+          default_slice_size: 0.1  # 10% of total order
+          min_slice_size: 0.05     # 5% minimum
+          time_interval_seconds: 30
+        
+        twap:
+          enabled: true
+          default_duration_minutes: 60
+          min_interval_seconds: 30
+          max_interval_seconds: 300
+        
+        smart_routing:
+          enabled: true
+          latency_threshold_ms: 100
+          liquidity_threshold: 10000
+          spread_threshold: 0.002  # 0.2%
+      
+      risk_management:
+        position_limits:
+          max_position_size_percent: 5.0  # 5% of portfolio
+          max_daily_volume_percent: 20.0  # 20% of daily volume
+          max_leverage: 2.0
+        
+        order_limits:
+          min_order_size_usd: 10
+          max_order_size_usd: 100000
+          max_slippage_percent: 0.5
+        
+        circuit_breaker:
+          enabled: true
+          daily_loss_limit_percent: 2.0
+          hourly_loss_limit_percent: 1.0
+          consecutive_loss_count: 5
+      
+      exchanges:
+        binance:
+          enabled: true
+          order_types: [market, limit, stop_loss, take_profit]
+          max_orders_per_second: 10
+          leverage_enabled: true
+          margin_enabled: false
+        
+        coinbase:
+          enabled: true
+          order_types: [market, limit, stop_loss]
+          max_orders_per_second: 5
+          leverage_enabled: false
+          margin_enabled: false
+        
+        kraken:
+          enabled: true
+          order_types: [market, limit, stop_loss]
+          max_orders_per_second: 8
+          leverage_enabled: true
+          margin_enabled: true
+      
+      monitoring:
+        execution_metrics:
+          enabled: true
+          latency_percentiles: [50, 90, 95, 99]
+          slippage_tracking: true
+          fill_rate_tracking: true
+        
+        alerts:
+          high_slippage_threshold: 0.01  # 1%
+          execution_failure_threshold: 3
+          latency_threshold_ms: 500
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: execution-hpa
+  namespace: neural-crypto-bot
+  labels:
+    app: neural-crypto-bot
+    component: execution
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: execution
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 60  # Lower threshold for execution service
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Pods
+    pods:
+      metric:
+        name: pending_orders
+      target:
+        type: AverageValue
+        averageValue: "50"
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 900  # 15 minutes - very conservative for trading
+      policies:
+      - type: Percent
+        value: 20
+        periodSeconds: 300  # 5 minutes
+    scaleUp:
+      stabilizationWindowSeconds: 180  # 3 minutes
+      policies:
+      - type: Percent
+        value: 100  # Can double quickly for trading demands
+        periodSeconds: 60
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: execution-pdb
+  namespace: neural-crypto-bot
+  labels:
+    app: neural-crypto-bot
+    component: execution
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: neural-crypto-bot
+      component: execution

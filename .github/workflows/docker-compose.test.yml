@@ -1,0 +1,123 @@
+# docker-compose.test.yml
+# Configuração Docker Compose para ambiente de testes CI/CD
+
+services:
+  # PostgreSQL para testes
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_USER: neuralbot
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: neuralcryptobot_test
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U neuralbot -d neuralcryptobot_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    tmpfs:
+      - /var/lib/postgresql/data
+
+  # Redis para testes
+  redis:
+    image: redis:7.2-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    command: redis-server --save ""
+
+  # Kafka e Zookeeper para testes de integração
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.1
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD-SHELL", "echo srvr | nc localhost 2181 | grep Mode"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.1
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: true
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Serviço de API para testes
+  api-test:
+    build:
+      context: .
+      dockerfile: deployment/docker/Dockerfile.api
+      target: testing
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: testing
+      DEBUG: true
+      LOG_LEVEL: DEBUG
+      DATABASE_URL: postgresql://neuralbot:password@postgres:5432/neuralcryptobot_test
+      REDIS_URL: redis://redis:6379/1
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SECRET_KEY: test-secret-key-for-ci-cd-only
+      TESTING: true
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./tests:/app/tests
+      - ./src:/app/src
+    command: ["python", "-m", "pytest", "tests/", "-v", "--tb=short"]
+
+  # Collector para testes de integração
+  collector-test:
+    build:
+      context: .
+      dockerfile: deployment/docker/Dockerfile.collector
+      target: testing
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: testing
+      DEBUG: true
+      LOG_LEVEL: DEBUG
+      DATABASE_URL: postgresql://neuralbot:password@postgres:5432/neuralcryptobot_test
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      TESTING: true
+      # Usar dados simulados para testes
+      USE_MOCK_DATA: true
+      MOCK_EXCHANGE_ENABLED: true
+    volumes:
+      - ./tests:/app/tests
+      - ./src:/app/src
+
+networks:
+  default:
+    name: neural-crypto-bot-test

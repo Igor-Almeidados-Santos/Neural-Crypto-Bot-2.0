@@ -1,0 +1,359 @@
+# deployment/kubernetes/collector-deployment.yaml
+# Kubernetes deployment para Data Collector do Neural Crypto Bot 2.0
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: collector
+  namespace: neural-crypto-bot
+  labels:
+    app: neural-crypto-bot
+    component: collector
+    version: v2.0.0
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+    description: "Neural Crypto Bot Data Collector Service"
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: neural-crypto-bot
+      component: collector
+  template:
+    metadata:
+      labels:
+        app: neural-crypto-bot
+        component: collector
+        version: v2.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: neural-crypto-bot
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: collector
+        image: ghcr.io/your-username/neural-crypto-bot-collector:IMAGE_TAG
+        imagePullPolicy: Always
+        ports:
+        - name: metrics
+          containerPort: 8080
+          protocol: TCP
+        env:
+        - name: ENVIRONMENT
+          value: "ENVIRONMENT"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: SERVICE_TYPE
+          value: "collector"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: neural-crypto-bot-secrets
+              key: database-url
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: "kafka:9092"
+        - name: KAFKA_CONSUMER_GROUP
+          value: "ncb-collector-group"
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: neural-crypto-bot-secrets
+              key: redis-url
+        - name: BINANCE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: exchange-secrets
+              key: binance-api-key
+        - name: BINANCE_API_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: exchange-secrets
+              key: binance-api-secret
+        - name: COINBASE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: exchange-secrets
+              key: coinbase-api-key
+        - name: COINBASE_API_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: exchange-secrets
+              key: coinbase-api-secret
+        - name: KRAKEN_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: exchange-secrets
+              key: kraken-api-key
+        - name: KRAKEN_API_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: exchange-secrets
+              key: kraken-api-secret
+        - name: DEFAULT_TRADING_PAIRS
+          value: "BTC/USDT,ETH/USDT,SOL/USDT,AVAX/USDT,DOT/USDT"
+        - name: COLLECTION_INTERVAL_SECONDS
+          value: "1"
+        - name: WEBSOCKET_RECONNECT_DELAY
+          value: "5"
+        - name: MAX_WEBSOCKET_RETRIES
+          value: "10"
+        - name: DATA_COMPRESSION_ENABLED
+          value: "true"
+        - name: BATCH_SIZE
+          value: "1000"
+        - name: WORKER_CONCURRENCY
+          value: "8"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "300m"
+        livenessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import src.data_collection.health_check; src.data_collection.health_check.check()"
+          initialDelaySeconds: 60
+          periodSeconds: 60
+          timeoutSeconds: 15
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import src.data_collection.health_check; src.data_collection.health_check.check_ready()"
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        startupProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import src.data_collection.health_check; src.data_collection.health_check.check()"
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 12
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: logs
+          mountPath: /app/logs
+        - name: data-cache
+          mountPath: /app/data
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: config
+        configMap:
+          name: collector-config
+      - name: logs
+        emptyDir: {}
+      - name: data-cache
+        emptyDir:
+          sizeLimit: 1Gi
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 60
+      dnsPolicy: ClusterFirst
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: component
+                  operator: In
+                  values:
+                  - collector
+              topologyKey: kubernetes.io/hostname
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: collector
+  namespace: neural-crypto-bot
+  labels:
+    app: neural-crypto-bot
+    component: collector
+spec:
+  type: ClusterIP
+  ports:
+  - name: metrics
+    port: 8080
+    targetPort: metrics
+    protocol: TCP
+  selector:
+    app: neural-crypto-bot
+    component: collector
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: collector-config
+  namespace: neural-crypto-bot
+  labels:
+    app: neural-crypto-bot
+    component: collector
+data:
+  collector.yaml: |
+    exchanges:
+      binance:
+        enabled: true
+        rate_limit: 1200  # requests per minute
+        websocket_enabled: true
+        sandbox: false
+        timeout: 30
+        symbols:
+          - BTC/USDT
+          - ETH/USDT
+          - SOL/USDT
+          - AVAX/USDT
+          - DOT/USDT
+      
+      coinbase:
+        enabled: true
+        rate_limit: 300
+        websocket_enabled: true
+        sandbox: false
+        timeout: 30
+        symbols:
+          - BTC/USD
+          - ETH/USD
+          - SOL/USD
+      
+      kraken:
+        enabled: true
+        rate_limit: 180
+        websocket_enabled: true
+        sandbox: false
+        timeout: 30
+        symbols:
+          - BTC/USD
+          - ETH/USD
+    
+    data_collection:
+      intervals:
+        tickers: 1      # seconds
+        orderbook: 5    # seconds
+        trades: 1       # seconds
+        ohlcv: 60       # seconds
+        funding_rates: 300  # seconds
+      
+      batch_processing:
+        enabled: true
+        batch_size: 1000
+        flush_interval: 10  # seconds
+      
+      storage:
+        compression: true
+        retention_days: 90
+        partition_by: date
+      
+      quality_checks:
+        enabled: true
+        max_price_deviation: 0.1  # 10%
+        max_age_seconds: 300
+        min_volume_threshold: 1000
+    
+    websockets:
+      max_connections_per_exchange: 5
+      reconnect_delay: 5
+      max_retries: 10
+      ping_interval: 30
+      pong_timeout: 10
+    
+    monitoring:
+      metrics_enabled: true
+      metrics_port: 8080
+      health_check_interval: 60
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: collector-hpa
+  namespace: neural-crypto-bot
+  labels:
+    app: neural-crypto-bot
+    component: collector
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: collector
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Pods
+    pods:
+      metric:
+        name: websocket_connections
+      target:
+        type: AverageValue
+        averageValue: "10"
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 600  # Longer stabilization for data consistency
+      policies:
+      - type: Percent
+        value: 25
+        periodSeconds: 120
+    scaleUp:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: collector-pdb
+  namespace: neural-crypto-bot
+  labels:
+    app: neural-crypto-bot
+    component: collector
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: neural-crypto-bot
+      component: collector

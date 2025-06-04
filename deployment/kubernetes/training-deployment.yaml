@@ -1,0 +1,473 @@
+# deployment/kubernetes/training-deployment.yaml
+# Kubernetes deployment para Training Service do Neural Crypto Bot 2.0
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: training
+  namespace: neural-crypto-bot
+  labels:
+    app: neural-crypto-bot
+    component: training
+    version: v2.0.0
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+    description: "Neural Crypto Bot ML Training Service"
+spec:
+  replicas: 1  # Training é tipicamente single-instance
+  strategy:
+    type: Recreate  # Evita múltiplas instâncias de training simultâneas
+  selector:
+    matchLabels:
+      app: neural-crypto-bot
+      component: training
+  template:
+    metadata:
+      labels:
+        app: neural-crypto-bot
+        component: training
+        version: v2.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: neural-crypto-bot
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: training
+        image: ghcr.io/your-username/neural-crypto-bot-training:IMAGE_TAG
+        imagePullPolicy: Always
+        ports:
+        - name: metrics
+          containerPort: 8080
+          protocol: TCP
+        env:
+        - name: ENVIRONMENT
+          value: "ENVIRONMENT"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: SERVICE_TYPE
+          value: "training"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: neural-crypto-bot-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: neural-crypto-bot-secrets
+              key: redis-url
+        - name: MODEL_STORAGE_PATH
+          value: "/app/models"
+        - name: FEATURE_STORE_PATH
+          value: "/app/feature_store"
+        # ML Configuration
+        - name: BATCH_SIZE
+          value: "128"
+        - name: EPOCHS
+          value: "100"
+        - name: LEARNING_RATE
+          value: "0.001"
+        - name: EARLY_STOPPING_PATIENCE
+          value: "10"
+        - name: MODEL_CACHE_SIZE
+          value: "512MB"
+        - name: TRAINING_BATCH_SIZE
+          value: "128"
+        # GPU Configuration (if available)
+        - name: CUDA_VISIBLE_DEVICES
+          value: "0"
+        - name: PYTORCH_CUDA_ALLOC_CONF
+          value: "max_split_size_mb:512"
+        # Training Schedule
+        - name: TRAINING_SCHEDULE_ENABLED
+          value: "true"
+        - name: TRAINING_INTERVAL_HOURS
+          value: "6"
+        - name: MODEL_VALIDATION_ENABLED
+          value: "true"
+        - name: HYPERPARAMETER_TUNING_ENABLED
+          value: "true"
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+            # nvidia.com/gpu: 1  # Uncomment if GPU available
+          limits:
+            memory: "8Gi"
+            cpu: "4000m"
+            # nvidia.com/gpu: 1  # Uncomment if GPU available
+        livenessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import src.model_training.health_check; src.model_training.health_check.check()"
+          initialDelaySeconds: 120
+          periodSeconds: 120
+          timeoutSeconds: 20
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import src.model_training.health_check; src.model_training.health_check.check_ready()"
+          initialDelaySeconds: 60
+          periodSeconds: 60
+          timeoutSeconds: 15
+          failureThreshold: 3
+        startupProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import src.model_training.health_check; src.model_training.health_check.check()"
+          initialDelaySeconds: 30
+          periodSeconds: 15
+          timeoutSeconds: 10
+          failureThreshold: 15
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: logs
+          mountPath: /app/logs
+        - name: models
+          mountPath: /app/models
+        - name: feature-store
+          mountPath: /app/feature_store
+        - name: training-data
+          mountPath: /app/training_data
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: config
+        configMap:
+          name: training-config
+      - name: logs
+        emptyDir: {}
+      - name: models
+        persistentVolumeClaim:
+          claimName: models-pvc
+      - name: feature-store
+        persistentVolumeClaim:
+          claimName: feature-store-pvc
+      - name: training-data
+        emptyDir:
+          sizeLimit: 2Gi
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 120  # Allow time for model saving
+      dnsPolicy: ClusterFirst
+      # Node affinity for GPU nodes (if available)
+      # affinity:
+      #   nodeAffinity:
+      #     requiredDuringSchedulingIgnoredDuringExecution:
+      #       nodeSelectorTerms:
+      #       - matchExpressions:
+      #         - key: accelerator
+      #           operator: In
+      #           values:
+      #           - nvidia-tesla-k80
+      #           - nvidia-tesla-p100
+      #           - nvidia-tesla-v100
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: training
+  namespace: neural-crypto-bot
+  labels:
+    app: neural-crypto-bot
+    component: training
+spec:
+  type: ClusterIP
+  ports:
+  - name: metrics
+    port: 8080
+    targetPort: metrics
+    protocol: TCP
+  selector:
+    app: neural-crypto-bot
+    component: training
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: training-config
+  namespace: neural-crypto-bot
+  labels:
+    app: neural-crypto-bot
+    component: training
+data:
+  training.yaml: |
+    models:
+      lstm:
+        enabled: true
+        architecture:
+          layers: [128, 64, 32]
+          dropout: 0.2
+          recurrent_dropout: 0.2
+        training:
+          batch_size: 128
+          epochs: 100
+          learning_rate: 0.001
+          optimizer: adam
+          loss: mse
+        features:
+          sequence_length: 60
+          features: [open, high, low, close, volume, rsi, macd, bb_upper, bb_lower]
+      
+      transformer:
+        enabled: true
+        architecture:
+          d_model: 256
+          nhead: 8
+          num_layers: 6
+          dropout: 0.1
+        training:
+          batch_size: 64
+          epochs: 200
+          learning_rate: 0.0001
+          optimizer: adamw
+          scheduler: cosine
+          warmup_steps: 1000
+      
+      ensemble:
+        enabled: true
+        models: [lstm, transformer, xgboost]
+        weights: [0.4, 0.4, 0.2]
+        voting: soft
+    
+    training:
+      schedule:
+        enabled: true
+        interval_hours: 6
+        retrain_threshold_hours: 24
+      
+      data:
+        train_split: 0.7
+        validation_split: 0.15
+        test_split: 0.15
+        lookback_days: 365
+        min_samples: 10000
+      
+      validation:
+        cross_validation_folds: 5
+        early_stopping_patience: 10
+        early_stopping_delta: 0.001
+        validation_frequency: 5  # epochs
+      
+      hyperparameter_tuning:
+        enabled: true
+        method: optuna
+        n_trials: 100
+        timeout_hours: 6
+        parameters:
+          learning_rate: [0.0001, 0.01]
+          batch_size: [32, 64, 128, 256]
+          hidden_layers: [[64, 32], [128, 64], [256, 128, 64]]
+    
+    feature_engineering:
+      technical_indicators:
+        enabled: true
+        indicators:
+          - rsi
+          - macd
+          - bollinger_bands
+          - stochastic
+          - williams_r
+          - cci
+          - momentum
+      
+      statistical_features:
+        enabled: true
+        features:
+          - rolling_mean
+          - rolling_std
+          - rolling_skew
+          - rolling_kurt
+          - price_acceleration
+      
+      market_microstructure:
+        enabled: true
+        features:
+          - bid_ask_spread
+          - order_book_imbalance
+          - trade_size_distribution
+          - volume_weighted_price
+    
+    model_management:
+      versioning:
+        enabled: true
+        registry_type: mlflow
+        auto_version: true
+      
+      deployment:
+        auto_deploy: false
+        performance_threshold: 0.8
+        validation_period_hours: 24
+      
+      monitoring:
+        drift_detection: true
+        performance_tracking: true
+        alert_thresholds:
+          accuracy_drop: 0.1
+          prediction_drift: 0.2
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: feature-store-pvc
+  namespace: neural-crypto-bot
+  labels:
+    app: neural-crypto-bot
+    component: training
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: fast-ssd
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: model-training-job
+  namespace: neural-crypto-bot
+  labels:
+    app: neural-crypto-bot
+    component: training
+spec:
+  schedule: "0 */6 * * *"  # Every 6 hours
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: neural-crypto-bot
+            component: training-job
+        spec:
+          serviceAccountName: neural-crypto-bot
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+          containers:
+          - name: training-job
+            image: ghcr.io/your-username/neural-crypto-bot-training:IMAGE_TAG
+            env:
+            - name: JOB_TYPE
+              value: "scheduled_training"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: neural-crypto-bot-secrets
+                  key: database-url
+            - name: MODEL_STORAGE_PATH
+              value: "/app/models"
+            resources:
+              requests:
+                memory: "4Gi"
+                cpu: "2000m"
+              limits:
+                memory: "8Gi"
+                cpu: "4000m"
+            volumeMounts:
+            - name: models
+              mountPath: /app/models
+            - name: feature-store
+              mountPath: /app/feature_store
+            command:
+            - python
+            - -m
+            - src.model_training.scheduled_job
+          volumes:
+          - name: models
+            persistentVolumeClaim:
+              claimName: models-pvc
+          - name: feature-store
+            persistentVolumeClaim:
+              claimName: feature-store-pvc
+          restartPolicy: OnFailure
+          backoffLimit: 3
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: model-validation-job
+  namespace: neural-crypto-bot
+  labels:
+    app: neural-crypto-bot
+    component: training
+spec:
+  schedule: "30 */2 * * *"  # Every 2 hours at 30 minutes
+  concurrencyPolicy: Allow
+  failedJobsHistoryLimit: 5
+  successfulJobsHistoryLimit: 10
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: neural-crypto-bot
+            component: validation-job
+        spec:
+          serviceAccountName: neural-crypto-bot
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+          containers:
+          - name: validation-job
+            image: ghcr.io/your-username/neural-crypto-bot-training:IMAGE_TAG
+            env:
+            - name: JOB_TYPE
+              value: "model_validation"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: neural-crypto-bot-secrets
+                  key: database-url
+            - name: MODEL_STORAGE_PATH
+              value: "/app/models"
+            resources:
+              requests:
+                memory: "1Gi"
+                cpu: "500m"
+              limits:
+                memory: "2Gi"
+                cpu: "1000m"
+            volumeMounts:
+            - name: models
+              mountPath: /app/models
+              readOnly: true
+            command:
+            - python
+            - -m
+            - src.model_training.validation_job
+          volumes:
+          - name: models
+            persistentVolumeClaim:
+              claimName: models-pvc
+          restartPolicy: OnFailure
+          backoffLimit: 2

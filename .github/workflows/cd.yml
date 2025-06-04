@@ -1,0 +1,388 @@
+# .github/workflows/cd.yml
+name: CD - Continuous Deployment
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+      force_deploy:
+        description: 'Force deployment (skip some checks)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  PYTHON_VERSION: "3.11"
+  POETRY_VERSION: "1.7.1"
+
+jobs:
+  determine-environment:
+    name: Determine Deployment Environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.env.outputs.environment }}
+      should_deploy: ${{ steps.env.outputs.should_deploy }}
+      image_tag: ${{ steps.env.outputs.image_tag }}
+    
+    steps:
+    - name: Determine Environment and Tag
+      id: env
+      run: |
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+          echo "should_deploy=true" >> $GITHUB_OUTPUT
+          echo "image_tag=${{ github.event.inputs.environment }}-${{ github.sha }}" >> $GITHUB_OUTPUT
+        elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          echo "environment=staging" >> $GITHUB_OUTPUT
+          echo "should_deploy=true" >> $GITHUB_OUTPUT
+          echo "image_tag=staging-${{ github.sha }}" >> $GITHUB_OUTPUT
+        elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          echo "environment=production" >> $GITHUB_OUTPUT
+          echo "should_deploy=true" >> $GITHUB_OUTPUT
+          echo "image_tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        else
+          echo "should_deploy=false" >> $GITHUB_OUTPUT
+        fi
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: determine-environment
+    if: needs.determine-environment.outputs.should_deploy == 'true'
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Run CodeQL Analysis
+      uses: github/codeql-action/init@v2
+      with:
+        languages: python
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v2
+
+    - name: Run Secret Scan
+      uses: trufflesecurity/trufflehog@main
+      with:
+        path: ./
+        base: main
+        head: HEAD
+
+  build-and-push:
+    name: Build and Push Docker Images
+    runs-on: ubuntu-latest
+    needs: [determine-environment, security-scan]
+    if: needs.determine-environment.outputs.should_deploy == 'true'
+    
+    strategy:
+      matrix:
+        service: [api, collector, execution, training]
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract Metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=tag
+          type=sha,prefix={{branch}}-
+          type=raw,value=${{ needs.determine-environment.outputs.image_tag }}
+
+    - name: Build and Push Docker Image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./deployment/docker/Dockerfile.${{ matrix.service }}
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64,linux/arm64
+
+    - name: Sign Container Image
+      run: |
+        echo "Signing container image..."
+        # Add container signing logic here if needed
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [determine-environment, build-and-push]
+    if: needs.determine-environment.outputs.environment == 'staging'
+    environment: 
+      name: staging
+      url: https://staging.neuralcryptobot.com
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Setup Kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+
+    - name: Configure Kubernetes Context
+      run: |
+        mkdir -p ~/.kube
+        echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > ~/.kube/config
+        kubectl config current-context
+
+    - name: Deploy to Staging Kubernetes
+      run: |
+        # Update image tags in manifests
+        sed -i "s|IMAGE_TAG|${{ needs.determine-environment.outputs.image_tag }}|g" deployment/kubernetes/*.yaml
+        sed -i "s|ENVIRONMENT|staging|g" deployment/kubernetes/*.yaml
+        
+        # Apply manifests
+        kubectl apply -f deployment/kubernetes/ -n neural-crypto-bot-staging
+        
+        # Wait for deployment
+        kubectl rollout status deployment/api -n neural-crypto-bot-staging --timeout=300s
+        kubectl rollout status deployment/collector -n neural-crypto-bot-staging --timeout=300s
+        kubectl rollout status deployment/execution -n neural-crypto-bot-staging --timeout=300s
+
+    - name: Run Smoke Tests
+      run: |
+        # Wait for services to be ready
+        sleep 30
+        
+        # Get service URL
+        API_URL=$(kubectl get service api -n neural-crypto-bot-staging -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+        
+        # Run smoke tests
+        curl -f "$API_URL/health" || exit 1
+        curl -f "$API_URL/api/v1/status" || exit 1
+        
+        echo "✅ Staging deployment successful!"
+
+    - name: Run Integration Tests in Staging
+      run: |
+        # Run subset of integration tests against staging
+        poetry install --no-interaction
+        poetry run pytest tests/integration/smoke/ -v \
+          --base-url="https://staging.neuralcryptobot.com" \
+          --timeout=60
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [determine-environment, build-and-push]
+    if: needs.determine-environment.outputs.environment == 'production'
+    environment: 
+      name: production
+      url: https://neuralcryptobot.com
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Manual Approval Check
+      run: |
+        echo "🚨 Production deployment requires manual approval"
+        echo "Image Tag: ${{ needs.determine-environment.outputs.image_tag }}"
+        echo "Commit: ${{ github.sha }}"
+
+    - name: Setup Kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+
+    - name: Configure Kubernetes Context
+      run: |
+        mkdir -p ~/.kube
+        echo "${{ secrets.KUBE_CONFIG_PRODUCTION }}" | base64 -d > ~/.kube/config
+        kubectl config current-context
+
+    - name: Backup Current State
+      run: |
+        # Create backup of current deployment
+        kubectl get deployment api -n neural-crypto-bot-production -o yaml > backup-api-deployment.yaml
+        kubectl get deployment collector -n neural-crypto-bot-production -o yaml > backup-collector-deployment.yaml
+        kubectl get deployment execution -n neural-crypto-bot-production -o yaml > backup-execution-deployment.yaml
+
+    - name: Blue-Green Deployment Setup
+      run: |
+        # Create green environment
+        cp -r deployment/kubernetes deployment/kubernetes-green
+        sed -i "s|neural-crypto-bot-production|neural-crypto-bot-production-green|g" deployment/kubernetes-green/*.yaml
+        sed -i "s|IMAGE_TAG|${{ needs.determine-environment.outputs.image_tag }}|g" deployment/kubernetes-green/*.yaml
+        sed -i "s|ENVIRONMENT|production|g" deployment/kubernetes-green/*.yaml
+
+    - name: Deploy to Green Environment
+      run: |
+        # Create green namespace
+        kubectl create namespace neural-crypto-bot-production-green --dry-run=client -o yaml | kubectl apply -f -
+        
+        # Deploy to green
+        kubectl apply -f deployment/kubernetes-green/ -n neural-crypto-bot-production-green
+        
+        # Wait for green deployment
+        kubectl rollout status deployment/api -n neural-crypto-bot-production-green --timeout=600s
+        kubectl rollout status deployment/collector -n neural-crypto-bot-production-green --timeout=600s
+        kubectl rollout status deployment/execution -n neural-crypto-bot-production-green --timeout=600s
+
+    - name: Run Production Smoke Tests
+      run: |
+        # Test green environment
+        sleep 60
+        
+        GREEN_API_URL=$(kubectl get service api -n neural-crypto-bot-production-green -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+        
+        # Comprehensive smoke tests
+        curl -f "$GREEN_API_URL/health" || exit 1
+        curl -f "$GREEN_API_URL/api/v1/status" || exit 1
+        curl -f "$GREEN_API_URL/api/v1/strategies" || exit 1
+        
+        echo "✅ Green environment tests passed!"
+
+    - name: Switch Traffic (Blue -> Green)
+      run: |
+        # Update service selectors to point to green
+        kubectl patch service api -n neural-crypto-bot-production -p '{"spec":{"selector":{"version":"green"}}}'
+        kubectl patch service collector -n neural-crypto-bot-production -p '{"spec":{"selector":{"version":"green"}}}'
+        kubectl patch service execution -n neural-crypto-bot-production -p '{"spec":{"selector":{"version":"green"}}}'
+        
+        echo "🔄 Traffic switched to green environment"
+
+    - name: Monitor Production Health
+      run: |
+        # Monitor for 5 minutes
+        for i in {1..10}; do
+          sleep 30
+          curl -f "https://neuralcryptobot.com/health" || exit 1
+          echo "Health check $i/10 passed"
+        done
+        
+        echo "✅ Production deployment successful!"
+
+    - name: Cleanup Blue Environment
+      run: |
+        # Remove old blue deployment after successful green deployment
+        kubectl delete deployment api-blue -n neural-crypto-bot-production --ignore-not-found
+        kubectl delete deployment collector-blue -n neural-crypto-bot-production --ignore-not-found
+        kubectl delete deployment execution-blue -n neural-crypto-bot-production --ignore-not-found
+        
+        # Rename green to blue for next deployment
+        kubectl label deployment api -n neural-crypto-bot-production version=blue --overwrite
+        kubectl label deployment collector -n neural-crypto-bot-production version=blue --overwrite
+        kubectl label deployment execution -n neural-crypto-bot-production version=blue --overwrite
+
+  rollback:
+    name: Rollback Deployment
+    runs-on: ubuntu-latest
+    if: failure() && (needs.deploy-staging.result == 'failure' || needs.deploy-production.result == 'failure')
+    environment: 
+      name: ${{ needs.determine-environment.outputs.environment }}
+    
+    steps:
+    - name: Setup Kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+
+    - name: Configure Kubernetes Context
+      run: |
+        mkdir -p ~/.kube
+        if [[ "${{ needs.determine-environment.outputs.environment }}" == "production" ]]; then
+          echo "${{ secrets.KUBE_CONFIG_PRODUCTION }}" | base64 -d > ~/.kube/config
+          NAMESPACE="neural-crypto-bot-production"
+        else
+          echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > ~/.kube/config
+          NAMESPACE="neural-crypto-bot-staging"
+        fi
+        kubectl config current-context
+
+    - name: Rollback Deployment
+      run: |
+        NAMESPACE="neural-crypto-bot-${{ needs.determine-environment.outputs.environment }}"
+        
+        echo "🔄 Rolling back deployments in $NAMESPACE"
+        kubectl rollout undo deployment/api -n $NAMESPACE
+        kubectl rollout undo deployment/collector -n $NAMESPACE
+        kubectl rollout undo deployment/execution -n $NAMESPACE
+        
+        # Wait for rollback
+        kubectl rollout status deployment/api -n $NAMESPACE --timeout=300s
+        kubectl rollout status deployment/collector -n $NAMESPACE --timeout=300s
+        kubectl rollout status deployment/execution -n $NAMESPACE --timeout=300s
+        
+        echo "✅ Rollback completed"
+
+  notify-deployment:
+    name: Notify Deployment Status
+    runs-on: ubuntu-latest
+    needs: [determine-environment, deploy-staging, deploy-production]
+    if: always() && needs.determine-environment.outputs.should_deploy == 'true'
+    
+    steps:
+    - name: Notify Success
+      if: (needs.deploy-staging.result == 'success' || needs.deploy-production.result == 'success')
+      run: |
+        echo "🚀 Deployment to ${{ needs.determine-environment.outputs.environment }} successful!"
+        echo "Image Tag: ${{ needs.determine-environment.outputs.image_tag }}"
+        echo "Environment: ${{ needs.determine-environment.outputs.environment }}"
+
+    - name: Notify Failure
+      if: (needs.deploy-staging.result == 'failure' || needs.deploy-production.result == 'failure')
+      run: |
+        echo "💥 Deployment to ${{ needs.determine-environment.outputs.environment }} failed!"
+        echo "Image Tag: ${{ needs.determine-environment.outputs.image_tag }}"
+        echo "Please check logs and investigate."
+
+    - name: Create GitHub Release
+      if: needs.determine-environment.outputs.environment == 'production' && needs.deploy-production.result == 'success' && startsWith(github.ref, 'refs/tags/')
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        body: |
+          ## Neural Crypto Bot 2.0 - Production Release
+          
+          ### Changes in this release:
+          - Automated deployment via GitHub Actions
+          - Enhanced security scanning
+          - Blue-green deployment strategy
+          
+          ### Deployed Services:
+          - ✅ API Gateway
+          - ✅ Data Collector
+          - ✅ Execution Engine  
+          - ✅ Training Service
+          
+          **Image Tag:** ${{ needs.determine-environment.outputs.image_tag }}
+          **Deployment Environment:** Production
+          
+        draft: false
+        prerelease: false
