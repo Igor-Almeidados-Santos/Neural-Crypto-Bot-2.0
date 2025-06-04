@@ -36,5 +36,3 @@ backups/
 
 # Arquivos gerados durante a execução
 coverage.xml
-
-poetry.lock
