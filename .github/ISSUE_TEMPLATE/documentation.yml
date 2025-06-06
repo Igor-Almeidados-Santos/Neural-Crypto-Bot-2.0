@@ -1,0 +1,61 @@
+name: 📚 Problema/Sugestão de Documentação
+description: Reporte um problema ou sugestão para a documentação
+title: "[DOCS]: "
+labels: ["documentation"]
+assignees:
+  - octocat
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Obrigado por dedicar seu tempo para melhorar nossa documentação!
+  - type: dropdown
+    id: type
+    attributes:
+      label: Tipo de Issue
+      description: Este problema está relacionado a qual tipo de documentação?
+      options:
+        - Documentação Técnica
+        - Tutoriais
+        - Exemplos de Código
+        - API Reference
+        - Guias de Início Rápido
+        - Arquitetura
+        - Outro
+    validations:
+      required: true
+  - type: input
+    id: location
+    attributes:
+      label: Localização
+      description: Qual página ou seção da documentação está com problema?
+      placeholder: "ex.: docs/getting-started/installation.md"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema ou Sugestão
+      description: Descreva o problema ou sua sugestão para a documentação.
+      placeholder: "A seção sobre configuração está incompleta porque..."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Conteúdo Esperado
+      description: O que você esperava encontrar ou como você sugere melhorar a documentação?
+      placeholder: "Seria útil adicionar um exemplo de como configurar..."
+  - type: textarea
+    id: additional
+    attributes:
+      label: Informações Adicionais
+      description: Qualquer informação adicional, contexto ou capturas de tela.
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Código de Conduta
+      description: Ao enviar esta issue, você concorda em seguir nosso [Código de Conduta](../CODE_OF_CONDUCT.md)
+      options:
+        - label: Eu concordo em seguir o Código de Conduta deste projeto
+          required: true

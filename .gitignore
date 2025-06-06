@@ -36,3 +36,63 @@ backups/
 
 # Arquivos gerados durante a execução
 coverage.xml
+
+# Documentação
+site/
+.pytest_cache/
+__pycache__/
+.DS_Store
+.vscode/
+docs/api-reference/generated/
+*.pyc
+.coverage
+htmlcov/
+.mypy_cache/
+
+# Documentação
+site/
+.pytest_cache/
+__pycache__/
+.DS_Store
+.vscode/
+docs/api-reference/generated/
+*.pyc
+.coverage
+htmlcov/
+.mypy_cache/
+
+# Documentação
+site/
+.pytest_cache/
+__pycache__/
+.DS_Store
+.vscode/
+docs/api-reference/generated/
+*.pyc
+.coverage
+htmlcov/
+.mypy_cache/
+
+# Documentação
+site/
+.pytest_cache/
+__pycache__/
+.DS_Store
+.vscode/
+docs/api-reference/generated/
+*.pyc
+.coverage
+htmlcov/
+.mypy_cache/
+
+# Documentação
+site/
+.pytest_cache/
+__pycache__/
+.DS_Store
+.vscode/
+docs/api-reference/generated/
+*.pyc
+.coverage
+htmlcov/
+.mypy_cache/

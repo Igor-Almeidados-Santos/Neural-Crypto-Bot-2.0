@@ -148,3 +148,44 @@ line-length = 100
 target-version = "py311"
 select = ["E", "F", "B", "I"]
 ignore = []
+
+[tool.poetry.group.docs.dependencies]
+# Core MkDocs
+mkdocs = "^1.5.3"
+mkdocs-material = "^9.4.8"
+
+# Essential Plugins
+mkdocs-git-revision-date-localized-plugin = "^1.2.1"
+mkdocs-git-committers-plugin-2 = "^2.2.2"
+mkdocs-minify-plugin = "^0.7.1"
+mkdocs-redirects = "^1.2.1"
+mkdocs-macros-plugin = "^1.0.5"
+mkdocs-awesome-pages-plugin = "^2.9.2"
+mkdocs-glightbox = "^0.3.4"
+mkdocs-exclude = "^1.0.2"
+
+# API Documentation
+mkdocs-swagger-ui-tag = "^0.6.6"
+mkdocstrings = {extras = ["python"], version = "^0.24.0"}
+mkdocs-gen-files = "^0.5.0"
+mkdocs-literate-nav = "^0.6.1"
+mkdocs-section-index = "^0.3.8"
+
+# Versioning and Publishing
+mike = "^2.0.0"
+ghp-import = "^2.1.0"
+
+# Enhancement Libraries
+pymdown-extensions = "^10.4"
+markdown-include = "^0.8.1"
+pillow = "^10.1.0"
+cairosvg = "^2.7.1"
+
+# Quality and Validation
+markdownlint-cli2 = "^0.11.0"
+markdown-link-check = "^3.11.2"
+htmlproofer = "^4.4.3"
+
+# Development Tools
+livereload = "^2.6.3"
+watchdog = "^2.3.0"

@@ -1,0 +1,16 @@
+# Documentação
+/docs/ @neural-crypto-bot/docs-team
+/mkdocs.yml @neural-crypto-bot/docs-team
+/scripts/docs/ @neural-crypto-bot/docs-team
+
+# Core do projeto
+/src/ @neural-crypto-bot/core-team
+/tests/ @neural-crypto-bot/core-team
+
+# CI/CD
+/.github/workflows/ @neural-crypto-bot/devops-team
+/deployment/ @neural-crypto-bot/devops-team
+
+# Infraestrutura
+/docker-compose.yml @neural-crypto-bot/devops-team
+/Dockerfile @neural-crypto-bot/devops-team

@@ -1,0 +1,7 @@
+# Neural Crypto Bot 2.0 - Documentation System Configuration
+# Generated automatically - do not edit manually
+DOCS_SYSTEM_VERSION=2.0.0
+SETUP_OS=ubuntu
+SETUP_ARCH=x86_64
+SETUP_USER=meidia
+PROJECT_ROOT=/home/meidia/Documentos/GitHub/Neural-Crypto-Bot-2.0
