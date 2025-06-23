@@ -1,0 +1,371 @@
+# =============================================================================
+# CONFIGURAÇÃO DO SISTEMA DE COLETA DE DADOS - NEURAL CRYPTO BOT
+# =============================================================================
+
+# Configuração de coleta de dados
+collection:
+  # Pares de negociação para coletar
+  pairs:
+    - "BTC/USDT"
+    - "ETH/USDT"
+    - "SOL/USDT"
+    - "AVAX/USDT"
+    - "DOT/USDT"
+    - "MATIC/USDT"
+    - "ADA/USDT"
+    - "LINK/USDT"
+  
+  # Exchanges para usar
+  exchanges:
+    - "binance"
+    - "coinbase"
+    # - "kraken"  # Descomentere para habilitar
+    # - "bybit"   # Descomentere para habilitar
+  
+  # Timeframes para coletar
+  timeframes:
+    - "1m"   # 1 minuto
+    - "5m"   # 5 minutos
+    - "15m"  # 15 minutos
+    - "1h"   # 1 hora
+    - "4h"   # 4 horas
+    - "1d"   # 1 dia
+  
+  # Intervalo de coleta em segundos
+  interval_seconds: 60
+  
+  # Profundidade do orderbook
+  orderbook_depth: 20
+  
+  # Coletar dados adicionais
+  funding_rates: true
+  liquidations: false  # Apenas para exchanges de derivativos
+  
+  # Coleta em tempo real via WebSocket
+  realtime_enabled: true
+  
+  # Número de workers simultâneos
+  max_workers: 8
+
+# Configuração das exchanges
+exchanges:
+  binance:
+    # Chaves da API (podem ser deixadas em branco para dados públicos)
+    api_key: "${BINANCE_API_KEY}"
+    api_secret: "${BINANCE_API_SECRET}"
+    
+    # Usar testnet (recomendado para desenvolvimento)
+    testnet: true
+    
+    # Rate limiting
+    rate_limit_buffer: 0.9  # 90% do limite
+    
+    # Configurações de WebSocket
+    websocket:
+      ping_interval: 20
+      ping_timeout: 10
+      reconnect_delay: 5
+      max_retries: 10
+  
+  coinbase:
+    api_key: "${COINBASE_API_KEY}"
+    api_secret: "${COINBASE_API_SECRET}"
+    api_passphrase: "${COINBASE_API_PASSPHRASE}"
+    
+    # Usar sandbox (recomendado para desenvolvimento)
+    sandbox: true
+    
+    rate_limit_buffer: 0.9
+    
+    websocket:
+      ping_interval: 30
+      ping_timeout: 10
+      reconnect_delay: 5
+      max_retries: 10
+  
+  kraken:
+    api_key: "${KRAKEN_API_KEY}"
+    api_secret: "${KRAKEN_API_SECRET}"
+    testnet: false
+    rate_limit_buffer: 0.8
+  
+  bybit:
+    api_key: "${BYBIT_API_KEY}"
+    api_secret: "${BYBIT_API_SECRET}"
+    testnet: true
+    rate_limit_buffer: 0.9
+
+# Configuração de armazenamento
+storage:
+  # Habilitar banco de dados
+  enable_database: true
+  
+  # Habilitar Kafka
+  enable_kafka: true
+  
+  # Sincronizar dados históricos na inicialização
+  sync_historical_data: true
+  
+  # Dias de dados históricos para sincronizar
+  historical_data_days: 30
+  
+  # Compressão de dados
+  enable_compression: true
+  compression_method: "zlib"  # zlib, gzip, lz4, brotli
+  compression_level: 6
+  compression_threshold: 1024  # bytes
+
+# Configuração do banco de dados
+database:
+  host: "${DB_HOST:localhost}"
+  port: "${DB_PORT:5432}"
+  database: "${DB_NAME:neural_crypto_bot}"
+  user: "${DB_USER:postgres}"
+  password: "${DB_PASSWORD:postgres}"
+  
+  # Pool de conexões
+  min_connections: 5
+  max_connections: 20
+  
+  # SSL
+  enable_ssl: false
+  ssl_mode: "prefer"
+  
+  # Schema
+  schema: "public"
+  
+  # Configurações de performance
+  statement_timeout: 30000  # ms
+  query_timeout: 30000      # ms
+
+# Configuração do Kafka
+kafka:
+  bootstrap_servers: "${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}"
+  client_id: "neural-crypto-bot-data-collection"
+  
+  # Tópicos
+  topic_prefix: "market-data"
+  
+  # Configurações de produção
+  acks: "all"
+  retries: 3
+  batch_size: 16384
+  linger_ms: 5
+  compression_type: "snappy"
+  
+  # Configurações de reliability
+  max_in_flight_requests_per_connection: 1
+  enable_idempotence: true
+  
+  # Timeouts
+  request_timeout_ms: 30000
+  delivery_timeout_ms: 120000
+
+# Configuração de balanceamento de carga
+load_balancing:
+  # Habilitar balanceamento
+  enabled: true
+  
+  # Estratégia: round_robin, weighted_round_robin, least_connections, 
+  #           weighted_least_connections, random, weighted_random, 
+  #           response_time, health_based, rate_limit_aware
+  strategy: "rate_limit_aware"
+  
+  # Buffer para rate limits (80% = usar apenas 80% do limite)
+  rate_limit_buffer: 0.8
+  
+  # Intervalo de health checks em segundos
+  health_check_interval: 60
+  
+  # Circuit breaker
+  circuit_breaker_threshold: 5     # falhas consecutivas
+  circuit_breaker_timeout: 300     # segundos para tentar novamente
+  
+  # Janela de response time
+  response_time_window: 100        # últimas N requisições
+  
+  # Retry configuration
+  max_retries: 3
+  retry_delay: 1.0                 # segundos
+
+# Configuração de validação de dados
+validation:
+  # Desvio máximo de preço permitido (%)
+  max_price_deviation_percent: 10.0
+  
+  # Desvio máximo de volume permitido (%)
+  max_volume_deviation_percent: 50.0
+  
+  # Spread máximo permitido (%)
+  max_spread_percent: 5.0
+  
+  # Profundidade mínima do orderbook
+  min_orderbook_depth: 5
+  
+  # Atraso máximo permitido no timestamp (segundos)
+  max_timestamp_delay_seconds: 30
+  
+  # Validação rigorosa (lança exceções em falhas)
+  enable_strict_validation: false
+  
+  # Tamanho do cache de validação
+  cache_size: 1000
+  
+  # Janela de tempo para valores de referência (minutos)
+  reference_window_minutes: 60
+
+# Configuração de cache
+cache:
+  # TTL do cache em segundos
+  ttl_seconds: 300
+  
+  # Tamanho máximo do cache
+  max_size: 10000
+  
+  # Limpeza automática
+  auto_cleanup: true
+  cleanup_interval: 60  # segundos
+
+# Configuração de concorrência
+concurrency:
+  # Máximo de requisições simultâneas
+  max_concurrent_requests: 100
+  
+  # Tamanho do pool de threads
+  thread_pool_size: 8
+  
+  # Semáforo para controle de fluxo
+  semaphore_size: 50
+
+# Configuração de recovery/resilência
+recovery:
+  # Máximo de tentativas de retry
+  max_retry_attempts: 3
+  
+  # Delay base para retry (exponential backoff)
+  retry_delay_base: 1.0
+  
+  # Threshold para circuit breaker
+  circuit_breaker_threshold: 5
+  
+  # Timeout para circuit breaker
+  circuit_breaker_timeout: 300
+  
+  # Timeout para shutdown graceful
+  shutdown_timeout: 30.0
+
+# Configuração de segurança
+security:
+  # Chave mestra para criptografia (será gerada se não fornecida)
+  master_key: "${CRYPTO_MASTER_KEY}"
+  
+  # Arquivo da chave de criptografia
+  key_file: ".crypto_key"
+  
+  # Criptografar dados sensíveis
+  encrypt_sensitive_data: true
+
+# Configuração de observabilidade
+observability:
+  # Métricas
+  enable_metrics: true
+  metrics_port: 8080
+  metrics_path: "/metrics"
+  
+  # Health checks
+  enable_health_checks: true
+  health_check_port: 8080
+  health_check_path: "/health"
+  
+  # Logging
+  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  log_format: "structured"  # text, json, structured
+  
+  # Tracing
+  enable_tracing: false
+  jaeger_endpoint: "${JAEGER_ENDPOINT}"
+  
+  # Performance monitoring
+  enable_performance_monitoring: true
+  performance_sample_rate: 0.1  # 10% das requisições
+
+# Configuração de desenvolvimento
+development:
+  # Modo debug
+  debug: false
+  
+  # Hot reload
+  hot_reload: false
+  
+  # Mock data
+  use_mock_data: false
+  
+  # Profiling
+  enable_profiling: false
+  profile_output: "profile.prof"
+
+# Configuração de produção
+production:
+  # Otimizações de performance
+  enable_optimizations: true
+  
+  # Preloading
+  preload_markets: true
+  
+  # Garbage collection
+  gc_optimization: true
+  
+  # Memory management
+  max_memory_mb: 1024
+  
+  # Connection pooling
+  connection_pooling: true
+
+# Configuração de alertas
+alerting:
+  # Habilitar alertas
+  enabled: false
+  
+  # Webhook para alertas
+  webhook_url: "${ALERT_WEBHOOK_URL}"
+  
+  # Alertas configurados
+  alerts:
+    high_error_rate:
+      threshold: 0.05  # 5%
+      window_minutes: 5
+    
+    high_latency:
+      threshold_ms: 1000
+      window_minutes: 5
+    
+    exchange_down:
+      threshold_consecutive_failures: 3
+    
+    memory_usage:
+      threshold_percent: 80
+    
+    disk_usage:
+      threshold_percent: 85
+
+# Configuração experimental
+experimental:
+  # Features experimentais
+  features:
+    adaptive_rate_limiting: false
+    ml_anomaly_detection: false
+    advanced_caching: false
+    distributed_processing: false
+  
+  # A/B Testing
+  ab_testing:
+    enabled: false
+    experiments: []
+
+# Environment overrides
+# Estas configurações podem ser sobrescritas por variáveis de ambiente
+# Formato: NEURAL_BOT_<SECTION>_<KEY>=valor
+# Exemplo: NEURAL_BOT_DATABASE_HOST=localhost
+environment_overrides:
+  enabled: true
+  prefix: "NEURAL_BOT_"

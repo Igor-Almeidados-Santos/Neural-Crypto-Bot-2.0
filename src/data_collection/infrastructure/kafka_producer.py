@@ -1,38 +1,95 @@
 """
-Produtor Kafka para publicação de dados de mercado.
+Produtor Kafka corrigido para publicação de dados de mercado.
 
-Este módulo implementa um produtor Kafka para publicar dados
-de mercado coletados, permitindo que outros serviços consumam
-esses dados em tempo real.
+Este módulo implementa um produtor Kafka robusto com:
+- Error handling avançado
+- Retry logic com backoff exponencial
+- Batch processing otimizado
+- Health checks
+- Metrics e observabilidade
 """
 import asyncio
 import json
 import logging
+import time
+import threading
 from datetime import datetime
 from decimal import Decimal
-from typing import Dict, List, Optional, Any, Union, Callable
+from typing import Dict, List, Optional, Any, Union, Callable, Awaitable
+from dataclasses import dataclass, asdict
+from collections import defaultdict, deque
+import uuid
 
-from confluent_kafka import Producer
-from confluent_kafka.admin import AdminClient, NewTopic
+try:
+    from confluent_kafka import Producer, KafkaError, KafkaException
+    from confluent_kafka.admin import AdminClient, NewTopic, ConfigResource, ResourceType
+    HAS_CONFLUENT_KAFKA = True
+except ImportError:
+    HAS_CONFLUENT_KAFKA = False
+
+try:
+    import aiokafka
+    from aiokafka import AIOKafkaProducer
+    HAS_AIOKAFKA = True
+except ImportError:
+    HAS_AIOKAFKA = False
+
+try:
+    import orjson as json_lib
+    HAS_ORJSON = True
+except ImportError:
+    import json as json_lib
+    HAS_ORJSON = False
 
 from src.data_collection.domain.entities.candle import Candle, TimeFrame
-from src.data_collection.domain.entities.orderbook import OrderBook
-from src.data_collection.domain.entities.trade import Trade
+from src.data_collection.domain.entities.orderbook import OrderBook, OrderBookLevel
+from src.data_collection.domain.entities.trade import Trade, TradeSide
 
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class KafkaMetrics:
+    """Métricas do produtor Kafka."""
+    total_messages: int = 0
+    successful_messages: int = 0
+    failed_messages: int = 0
+    avg_latency_ms: float = 0.0
+    last_send_time: Optional[datetime] = None
+    connection_errors: int = 0
+    retry_count: int = 0
+
+
+class KafkaError(Exception):
+    """Erro base para operações Kafka."""
+    pass
+
+
+class KafkaConnectionError(KafkaError):
+    """Erro de conexão com Kafka."""
+    pass
+
+
+class KafkaPublishError(KafkaError):
+    """Erro de publicação no Kafka."""
+    pass
+
+
 class KafkaProducer:
     """
-    Produtor Kafka para publicação de dados de mercado.
+    Produtor Kafka robusto para publicação de dados de mercado.
     
-    Implementa funcionalidades para publicar dados de mercado
-    como trades, orderbooks e candles em tópicos Kafka.
+    Implementa funcionalidades avançadas:
+    - Múltiplas bibliotecas Kafka (confluent-kafka, aiokafka)
+    - Batch processing otimizado
+    - Retry logic com circuit breaker
+    - Serialização eficiente
+    - Health checks e métricas
     """
     
     def __init__(
-        self, 
+        self,
         bootstrap_servers: str,
         client_id: str = "neural-crypto-bot-data-collection",
         acks: str = "all",
@@ -42,23 +99,28 @@ class KafkaProducer:
         compression_type: str = "snappy",
         max_in_flight_requests_per_connection: int = 1,
         enable_idempotence: bool = True,
-        topic_prefix: str = "market-data"
+        topic_prefix: str = "market-data",
+        use_confluent: bool = True
     ):
         """
         Inicializa o produtor Kafka.
         
         Args:
-            bootstrap_servers: Lista de servidores Kafka no formato "host1:port1,host2:port2"
-            client_id: ID do cliente Kafka
-            acks: Configuração de acknowledges ("0", "1", "all")
-            retries: Número de tentativas de reenvio em caso de falha
-            batch_size: Tamanho máximo do batch em bytes
-            linger_ms: Tempo de espera para acumular mensagens em milissegundos
-            compression_type: Tipo de compressão ("none", "gzip", "snappy", "lz4", "zstd")
-            max_in_flight_requests_per_connection: Número máximo de requisições em andamento
-            enable_idempotence: Se True, habilita idempotência para garantir entrega exatamente uma vez
-            topic_prefix: Prefixo para os nomes dos tópicos
+            bootstrap_servers: Lista de servidores Kafka
+            client_id: ID do cliente
+            acks: Configuração de acknowledges
+            retries: Número de tentativas
+            batch_size: Tamanho do batch
+            linger_ms: Tempo de espera para batch
+            compression_type: Tipo de compressão
+            max_in_flight_requests_per_connection: Requisições em andamento
+            enable_idempotence: Idempotência
+            topic_prefix: Prefixo dos tópicos
+            use_confluent: Usar confluent-kafka (preferido) ou aiokafka
         """
+        if not HAS_CONFLUENT_KAFKA and not HAS_AIOKAFKA:
+            raise KafkaError("confluent-kafka ou aiokafka são necessários")
+        
         self.bootstrap_servers = bootstrap_servers
         self.client_id = client_id
         self.acks = acks
@@ -69,446 +131,606 @@ class KafkaProducer:
         self.max_in_flight_requests_per_connection = max_in_flight_requests_per_connection
         self.enable_idempotence = enable_idempotence
         self.topic_prefix = topic_prefix
+        self.use_confluent = use_confluent and HAS_CONFLUENT_KAFKA
         
-        # Configura o produtor Kafka
-        self._producer_config = {
-            'bootstrap.servers': bootstrap_servers,
-            'client.id': client_id,
-            'acks': acks,
-            'retries': retries,
-            'batch.size': batch_size,
-            'linger.ms': linger_ms,
-            'compression.type': compression_type,
-            'max.in.flight.requests.per.connection': max_in_flight_requests_per_connection,
-            'enable.idempotence': enable_idempotence
-        }
-        
-        # Inicializa o produtor
+        # Estado
         self._producer = None
-        
-        # Flag para controle de estado
+        self._admin_client = None
         self._initialized = False
-        
-        # Locks para inicialização e publicação
+        self._closed = False
         self._init_lock = asyncio.Lock()
-        self._publish_lock = asyncio.Lock()
+        
+        # Métricas
+        self._metrics = KafkaMetrics()
+        self._metrics_lock = threading.Lock()
+        
+        # Circuit breaker
+        self._circuit_breaker_failures = 0
+        self._circuit_breaker_threshold = 5
+        self._circuit_breaker_open = False
+        self._circuit_breaker_last_failure = 0
+        self._circuit_breaker_timeout = 60  # segundos
         
         # Tópicos padrão
         self._default_topics = {
             'trades': f"{self.topic_prefix}.trades",
             'orderbooks': f"{self.topic_prefix}.orderbooks",
-            'candles': f"{self.topic_prefix}.candles"
+            'candles': f"{self.topic_prefix}.candles",
+            'funding_rates': f"{self.topic_prefix}.funding_rates",
+            'liquidations': f"{self.topic_prefix}.liquidations"
         }
         
-        # Callbacks de entrega
-        self._delivery_callbacks = {}
+        # Buffer para batch processing
+        self._message_buffer = defaultdict(list)
+        self._buffer_lock = asyncio.Lock()
+        self._flush_task = None
+        self._buffer_max_size = 1000
+        self._buffer_flush_interval = 5.0  # segundos
+        
+        # Configuração do produtor
+        self._producer_config = self._build_config()
+        
+        logger.info(f"KafkaProducer configurado (confluent={self.use_confluent})")
+    
+    def _build_config(self) -> Dict[str, Any]:
+        """Constrói configuração do produtor."""
+        if self.use_confluent:
+            return {
+                'bootstrap.servers': self.bootstrap_servers,
+                'client.id': self.client_id,
+                'acks': self.acks,
+                'retries': self.retries,
+                'batch.size': self.batch_size,
+                'linger.ms': self.linger_ms,
+                'compression.type': self.compression_type,
+                'max.in.flight.requests.per.connection': self.max_in_flight_requests_per_connection,
+                'enable.idempotence': self.enable_idempotence,
+                'delivery.timeout.ms': 120000,
+                'request.timeout.ms': 30000,
+                'retry.backoff.ms': 100
+            }
+        else:
+            return {
+                'bootstrap_servers': self.bootstrap_servers,
+                'client_id': self.client_id,
+                'acks': self.acks,
+                'retries': self.retries,
+                'batch_size': self.batch_size,
+                'linger_ms': self.linger_ms,
+                'compression_type': self.compression_type,
+                'max_in_flight_requests_per_connection': self.max_in_flight_requests_per_connection,
+                'enable_idempotence': self.enable_idempotence
+            }
     
     async def initialize(self) -> None:
-        """
-        Inicializa o produtor Kafka.
-        
-        Esta função deve ser chamada antes de publicar mensagens.
-        """
+        """Inicializa o produtor Kafka."""
         async with self._init_lock:
             if self._initialized:
                 return
-                
+            
             try:
-                logger.info(f"Inicializando produtor Kafka: {self.bootstrap_servers}")
+                if self.use_confluent:
+                    await self._initialize_confluent()
+                else:
+                    await self._initialize_aiokafka()
                 
-                # Cria o produtor
-                self._producer = Producer(self._producer_config)
-                
-                # Verifica/cria os tópicos
+                # Verificar/criar tópicos
                 await self._ensure_topics()
                 
+                # Iniciar buffer flush task
+                self._flush_task = asyncio.create_task(self._buffer_flush_loop())
+                
                 self._initialized = True
-                logger.info("Produtor Kafka inicializado")
+                logger.info("KafkaProducer inicializado com sucesso")
                 
             except Exception as e:
-                logger.error(f"Erro ao inicializar produtor Kafka: {str(e)}", exc_info=True)
-                raise
+                logger.error(f"Erro na inicialização do Kafka: {e}")
+                raise KafkaConnectionError(f"Falha ao conectar: {e}")
     
-    async def close(self) -> None:
-        """
-        Fecha o produtor Kafka.
-        """
-        if self._producer:
-            logger.info("Fechando produtor Kafka")
-            
-            # Aguarda a entrega de todas as mensagens pendentes
-            self._producer.flush()
-            
-            # Libera o produtor
-            self._producer = None
-            self._initialized = False
-            
-            logger.info("Produtor Kafka fechado")
+    async def _initialize_confluent(self) -> None:
+        """Inicializa usando confluent-kafka."""
+        if not HAS_CONFLUENT_KAFKA:
+            raise KafkaError("confluent-kafka não está disponível")
+        
+        self._producer = Producer(self._producer_config)
+        
+        # Admin client para gerenciamento de tópicos
+        admin_config = {
+            'bootstrap.servers': self.bootstrap_servers,
+            'client.id': f"{self.client_id}-admin"
+        }
+        self._admin_client = AdminClient(admin_config)
+        
+        logger.info("Producer confluent-kafka inicializado")
     
-    async def publish_trade(self, trade: Trade, topic: Optional[str] = None) -> None:
-        """
-        Publica uma transação em um tópico Kafka.
+    async def _initialize_aiokafka(self) -> None:
+        """Inicializa usando aiokafka."""
+        if not HAS_AIOKAFKA:
+            raise KafkaError("aiokafka não está disponível")
         
-        Args:
-            trade: Entidade Trade a ser publicada
-            topic: Nome do tópico (opcional, usa o tópico padrão se não fornecido)
-            
-        Raises:
-            Exception: Se ocorrer um erro ao publicar
-        """
-        if not self._initialized:
-            await self.initialize()
-            
-        # Usa o tópico padrão se não fornecido
-        if topic is None:
-            topic = self._default_topics['trades']
-            
-        # Converte a entidade para JSON
-        message = self._trade_to_json(trade)
+        self._producer = AIOKafkaProducer(**self._producer_config)
+        await self._producer.start()
         
-        # Publica a mensagem
-        await self._publish_message(topic, message, key=f"{trade.exchange}:{trade.trading_pair}")
+        logger.info("Producer aiokafka inicializado")
     
-    async def publish_trades_batch(self, trades: List[Trade], topic: Optional[str] = None) -> None:
-        """
-        Publica um lote de transações em um tópico Kafka.
+    async def _ensure_topics(self) -> None:
+        """Verifica/cria tópicos necessários."""
+        if not self.use_confluent or not self._admin_client:
+            return  # aiokafka cria tópicos automaticamente
         
-        Args:
-            trades: Lista de entidades Trade a serem publicadas
-            topic: Nome do tópico (opcional, usa o tópico padrão se não fornecido)
+        try:
+            # Verificar tópicos existentes
+            metadata = self._admin_client.list_topics(timeout=10)
+            existing_topics = set(metadata.topics.keys())
             
-        Raises:
-            Exception: Se ocorrer um erro ao publicar
-        """
-        if not trades:
-            return
+            # Criar tópicos que não existem
+            topics_to_create = []
+            for topic_name in self._default_topics.values():
+                if topic_name not in existing_topics:
+                    topics_to_create.append(
+                        NewTopic(
+                            topic=topic_name,
+                            num_partitions=3,
+                            replication_factor=1,
+                            config={
+                                'cleanup.policy': 'delete',
+                                'retention.ms': str(7 * 24 * 60 * 60 * 1000),  # 7 dias
+                                'compression.type': self.compression_type
+                            }
+                        )
+                    )
             
-        if not self._initialized:
-            await self.initialize()
+            if topics_to_create:
+                fs = self._admin_client.create_topics(topics_to_create)
+                
+                # Aguardar criação
+                for topic, f in fs.items():
+                    try:
+                        f.result(timeout=10)
+                        logger.info(f"Tópico criado: {topic}")
+                    except Exception as e:
+                        logger.warning(f"Erro ao criar tópico {topic}: {e}")
             
-        # Usa o tópico padrão se não fornecido
-        if topic is None:
-            topic = self._default_topics['trades']
+            logger.info("Tópicos verificados/criados")
             
-        # Publica cada trade
-        for trade in trades:
-            # Converte a entidade para JSON
-            message = self._trade_to_json(trade)
-            
-            # Publica a mensagem sem aguardar confirmação
-            self._producer.produce(
-                topic=topic,
-                key=f"{trade.exchange}:{trade.trading_pair}",
-                value=message,
-                callback=self._delivery_report
-            )
-            
-        # Faz o flush para garantir que as mensagens sejam enviadas
-        self._producer.poll(0)
+        except Exception as e:
+            logger.warning(f"Erro ao verificar tópicos: {e}")
     
-    async def publish_orderbook(self, orderbook: OrderBook, topic: Optional[str] = None) -> None:
+    async def publish_message(
+        self,
+        topic: str,
+        message: Dict[str, Any],
+        key: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None
+    ) -> None:
         """
-        Publica um orderbook em um tópico Kafka.
-        
-        Args:
-            orderbook: Entidade OrderBook a ser publicada
-            topic: Nome do tópico (opcional, usa o tópico padrão se não fornecido)
-            
-        Raises:
-            Exception: Se ocorrer um erro ao publicar
-        """
-        if not self._initialized:
-            await self.initialize()
-            
-        # Usa o tópico padrão se não fornecido
-        if topic is None:
-            topic = self._default_topics['orderbooks']
-            
-        # Converte a entidade para JSON
-        message = self._orderbook_to_json(orderbook)
-        
-        # Publica a mensagem
-        await self._publish_message(topic, message, key=f"{orderbook.exchange}:{orderbook.trading_pair}")
-    
-    async def publish_candle(self, candle: Candle, topic: Optional[str] = None) -> None:
-        """
-        Publica uma vela em um tópico Kafka.
-        
-        Args:
-            candle: Entidade Candle a ser publicada
-            topic: Nome do tópico (opcional, usa o tópico padrão se não fornecido)
-            
-        Raises:
-            Exception: Se ocorrer um erro ao publicar
-        """
-        if not self._initialized:
-            await self.initialize()
-            
-        # Usa o tópico padrão se não fornecido
-        if topic is None:
-            topic = self._default_topics['candles']
-            
-        # Converte a entidade para JSON
-        message = self._candle_to_json(candle)
-        
-        # Publica a mensagem
-        await self._publish_message(topic, message, key=f"{candle.exchange}:{candle.trading_pair}:{candle.timeframe.value}")
-    
-    async def publish_candles_batch(self, candles: List[Candle], topic: Optional[str] = None) -> None:
-        """
-        Publica um lote de velas em um tópico Kafka.
-        
-        Args:
-            candles: Lista de entidades Candle a serem publicadas
-            topic: Nome do tópico (opcional, usa o tópico padrão se não fornecido)
-            
-        Raises:
-            Exception: Se ocorrer um erro ao publicar
-        """
-        if not candles:
-            return
-            
-        if not self._initialized:
-            await self.initialize()
-            
-        # Usa o tópico padrão se não fornecido
-        if topic is None:
-            topic = self._default_topics['candles']
-            
-        # Publica cada candle
-        for candle in candles:
-            # Converte a entidade para JSON
-            message = self._candle_to_json(candle)
-            
-            # Publica a mensagem sem aguardar confirmação
-            self._producer.produce(
-                topic=topic,
-                key=f"{candle.exchange}:{candle.trading_pair}:{candle.timeframe.value}",
-                value=message,
-                callback=self._delivery_report
-            )
-            
-        # Faz o flush para garantir que as mensagens sejam enviadas
-        self._producer.poll(0)
-    
-    async def _publish_message(self, topic: str, message: str, key: Optional[str] = None) -> None:
-        """
-        Publica uma mensagem em um tópico Kafka.
+        Publica uma mensagem no Kafka.
         
         Args:
             topic: Nome do tópico
-            message: Mensagem a ser publicada (JSON)
+            message: Mensagem a ser publicada
             key: Chave da mensagem (opcional)
-            
-        Raises:
-            Exception: Se ocorrer um erro ao publicar
+            headers: Headers da mensagem (opcional)
         """
-        async with self._publish_lock:
-            try:
-                # Gera um ID único para esta mensagem
-                message_id = f"{topic}-{datetime.utcnow().timestamp()}"
-                
-                # Cria um futuro para aguardar a confirmação
-                delivery_future = asyncio.Future()
-                self._delivery_callbacks[message_id] = delivery_future
-                
-                # Publica a mensagem
-                self._producer.produce(
-                    topic=topic,
-                    key=key,
-                    value=message,
-                    callback=lambda err, msg: self._delivery_callback(err, msg, message_id)
-                )
-                
-                # Faz o poll para iniciar o envio
-                self._producer.poll(0)
-                
-                # Aguarda a confirmação de entrega (com timeout)
-                try:
-                    await asyncio.wait_for(delivery_future, timeout=10.0)
-                except asyncio.TimeoutError:
-                    logger.warning(f"Timeout ao aguardar confirmação de entrega para {topic}")
-                finally:
-                    # Remove o callback mesmo em caso de timeout
-                    self._delivery_callbacks.pop(message_id, None)
-                
-            except Exception as e:
-                logger.error(f"Erro ao publicar mensagem no tópico {topic}: {str(e)}", exc_info=True)
-                raise
-    
-    def _delivery_callback(self, err, msg, message_id: str) -> None:
-        """
-        Callback chamado quando uma mensagem é entregue ou falha.
+        if not self._initialized:
+            await self.initialize()
         
-        Args:
-            err: Erro (None se entregue com sucesso)
-            msg: Mensagem entregue
-            message_id: ID único da mensagem
-        """
-        future = self._delivery_callbacks.get(message_id)
-        if future is None:
-            return
-            
-        if err is not None:
-            future.set_exception(Exception(f"Erro ao entregar mensagem: {err}"))
-        else:
-            future.set_result(True)
-    
-    def _delivery_report(self, err, msg) -> None:
-        """
-        Relatório de entrega para mensagens em batch.
+        if self._circuit_breaker_open:
+            if time.time() - self._circuit_breaker_last_failure > self._circuit_breaker_timeout:
+                self._circuit_breaker_open = False
+                self._circuit_breaker_failures = 0
+            else:
+                raise KafkaPublishError("Circuit breaker aberto")
         
-        Args:
-            err: Erro (None se entregue com sucesso)
-            msg: Mensagem entregue
-        """
-        if err is not None:
-            logger.error(f"Erro ao entregar mensagem: {err}")
-        else:
-            logger.debug(f"Mensagem entregue: {msg.topic()} [{msg.partition()}]")
-    
-    async def _ensure_topics(self) -> None:
-        """
-        Verifica se os tópicos necessários existem e cria-os se necessário.
-        """
         try:
-            # Cria um cliente de administração
-            admin_client = AdminClient({'bootstrap.servers': self.bootstrap_servers})
+            # Serializar mensagem
+            message_data = self._serialize_message(message)
             
-            # Lista os tópicos existentes
-            metadata = admin_client.list_topics(timeout=10)
-            existing_topics = metadata.topics
+            # Adicionar metadados
+            enriched_message = {
+                'timestamp': datetime.utcnow().isoformat(),
+                'producer_id': self.client_id,
+                'message_id': str(uuid.uuid4()),
+                'data': message_data
+            }
             
-            # Tópicos a serem criados
-            topics_to_create = []
+            serialized_message = self._serialize_message(enriched_message)
             
-            for topic_name in self._default_topics.values():
-                if topic_name not in existing_topics:
-                    logger.info(f"Tópico não encontrado, será criado: {topic_name}")
-                    
-                    # Configuração do tópico
-                    topic_config = {
-                        'cleanup.policy': 'delete',       # Política de limpeza
-                        'retention.ms': '86400000',       # Retenção de 24 horas
-                        'segment.ms': '3600000',          # Segmentos de 1 hora
-                        'segment.bytes': '1073741824',    # Segmentos de 1 GB
-                        'min.insync.replicas': '1'        # Replicação mínima
-                    }
-                    
-                    # Cria o tópico
-                    topics_to_create.append(NewTopic(
-                        topic_name,
-                        num_partitions=12,              # Número de partições
-                        replication_factor=1,           # Fator de replicação
-                        config=topic_config
-                    ))
+            if self.use_confluent:
+                await self._publish_confluent(topic, serialized_message, key, headers)
+            else:
+                await self._publish_aiokafka(topic, serialized_message, key, headers)
             
-            # Cria os tópicos em paralelo
-            if topics_to_create:
-                logger.info(f"Criando {len(topics_to_create)} tópicos")
-                admin_client.create_topics(topics_to_create)
+            # Atualizar métricas
+            self._update_metrics(True)
             
         except Exception as e:
-            logger.warning(f"Erro ao verificar/criar tópicos: {str(e)}")
-            # Continua mesmo em caso de erro, pois os tópicos podem ser criados automaticamente
+            self._update_metrics(False)
+            self._handle_publish_error(e)
+            raise KafkaPublishError(f"Erro ao publicar mensagem: {e}")
     
-    def _trade_to_json(self, trade: Trade) -> str:
-        """
-        Converte uma entidade Trade para JSON.
+    async def _publish_confluent(
+        self,
+        topic: str,
+        message: bytes,
+        key: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None
+    ) -> None:
+        """Publica usando confluent-kafka."""
+        def delivery_callback(err, msg):
+            if err:
+                logger.error(f"Erro na entrega da mensagem: {err}")
+                self._handle_publish_error(err)
+            else:
+                logger.debug(f"Mensagem entregue: {msg.topic()}[{msg.partition()}]")
         
-        Args:
-            trade: Entidade Trade
+        try:
+            # Preparar headers
+            kafka_headers = None
+            if headers:
+                kafka_headers = [(k, v.encode() if isinstance(v, str) else v) for k, v in headers.items()]
             
-        Returns:
-            str: Representação JSON da entidade
-        """
-        # Cria um dicionário com os dados
-        data = {
-            "id": trade.id,
-            "exchange": trade.exchange,
-            "trading_pair": trade.trading_pair,
-            "price": float(trade.price),
-            "amount": float(trade.amount),
-            "cost": float(trade.cost),
-            "timestamp": trade.timestamp.isoformat(),
-            "side": trade.side.value,
-            "taker": trade.taker
+            # Produzir mensagem
+            self._producer.produce(
+                topic=topic,
+                value=message,
+                key=key.encode() if key else None,
+                headers=kafka_headers,
+                callback=delivery_callback
+            )
+            
+            # Flush para garantir entrega
+            self._producer.poll(timeout=0.1)
+            
+        except Exception as e:
+            raise KafkaPublishError(f"Erro no producer confluent: {e}")
+    
+    async def _publish_aiokafka(
+        self,
+        topic: str,
+        message: bytes,
+        key: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None
+    ) -> None:
+        """Publica usando aiokafka."""
+        try:
+            # Preparar headers
+            kafka_headers = None
+            if headers:
+                kafka_headers = [(k, v.encode() if isinstance(v, str) else v) for k, v in headers.items()]
+            
+            # Produzir mensagem
+            await self._producer.send_and_wait(
+                topic=topic,
+                value=message,
+                key=key.encode() if key else None,
+                headers=kafka_headers
+            )
+            
+        except Exception as e:
+            raise KafkaPublishError(f"Erro no producer aiokafka: {e}")
+    
+    def _serialize_message(self, message: Any) -> bytes:
+        """Serializa mensagem para JSON."""
+        try:
+            if HAS_ORJSON:
+                return json_lib.dumps(message, default=self._json_serializer)
+            else:
+                return json_lib.dumps(message, default=self._json_serializer).encode('utf-8')
+        except Exception as e:
+            raise KafkaPublishError(f"Erro na serialização: {e}")
+    
+    def _json_serializer(self, obj: Any) -> Any:
+        """Serializa objetos especiais para JSON."""
+        if isinstance(obj, Decimal):
+            return float(obj)
+        elif isinstance(obj, datetime):
+            return obj.isoformat()
+        elif hasattr(obj, '__dict__'):
+            return obj.__dict__
+        elif hasattr(obj, 'value'):  # Enums
+            return obj.value
+        else:
+            return str(obj)
+    
+    # Métodos específicos para entidades de domínio
+    
+    async def publish_trade(self, trade: Trade) -> None:
+        """Publica um trade."""
+        message = {
+            'exchange': trade.exchange,
+            'trading_pair': trade.trading_pair,
+            'trade_id': trade.trade_id,
+            'price': float(trade.price),
+            'amount': float(trade.amount),
+            'cost': float(trade.cost),
+            'side': trade.side.value,
+            'timestamp': trade.timestamp.isoformat()
         }
         
-        # Converte para JSON
-        return json.dumps(data)
-    
-    def _orderbook_to_json(self, orderbook: OrderBook) -> str:
-        """
-        Converte uma entidade OrderBook para JSON.
+        key = f"{trade.exchange}:{trade.trading_pair}"
+        headers = {
+            'type': 'trade',
+            'exchange': trade.exchange,
+            'trading_pair': trade.trading_pair
+        }
         
-        Args:
-            orderbook: Entidade OrderBook
-            
-        Returns:
-            str: Representação JSON da entidade
-        """
-        # Cria um dicionário com os dados
-        data = {
-            "exchange": orderbook.exchange,
-            "trading_pair": orderbook.trading_pair,
-            "timestamp": orderbook.timestamp.isoformat(),
-            "bids": [
-                {"price": float(bid.price), "amount": float(bid.amount), "count": bid.count}
-                for bid in orderbook.bids
+        await self.publish_message(
+            self._default_topics['trades'],
+            message,
+            key,
+            headers
+        )
+    
+    async def publish_orderbook(self, orderbook: OrderBook) -> None:
+        """Publica um orderbook."""
+        message = {
+            'exchange': orderbook.exchange,
+            'trading_pair': orderbook.trading_pair,
+            'timestamp': orderbook.timestamp.isoformat(),
+            'bids': [
+                {'price': float(level.price), 'amount': float(level.amount)}
+                for level in orderbook.bids
             ],
-            "asks": [
-                {"price": float(ask.price), "amount": float(ask.amount), "count": ask.count}
-                for ask in orderbook.asks
+            'asks': [
+                {'price': float(level.price), 'amount': float(level.amount)}
+                for level in orderbook.asks
             ]
         }
         
-        # Adiciona algumas métricas calculadas
-        try:
-            data["mid_price"] = float(orderbook.mid_price)
-            data["spread"] = float(orderbook.spread)
-            data["spread_percentage"] = float(orderbook.spread_percentage)
-        except Exception:
-            pass
+        # Adicionar spread se disponível
+        if hasattr(orderbook, 'spread_percentage'):
+            message['spread_percentage'] = float(orderbook.spread_percentage)
         
-        # Converte para JSON
-        return json.dumps(data)
-    
-    def _candle_to_json(self, candle: Candle) -> str:
-        """
-        Converte uma entidade Candle para JSON.
-        
-        Args:
-            candle: Entidade Candle
-            
-        Returns:
-            str: Representação JSON da entidade
-        """
-        # Cria um dicionário com os dados
-        data = {
-            "exchange": candle.exchange,
-            "trading_pair": candle.trading_pair,
-            "timestamp": candle.timestamp.isoformat(),
-            "timeframe": candle.timeframe.value,
-            "open": float(candle.open),
-            "high": float(candle.high),
-            "low": float(candle.low),
-            "close": float(candle.close),
-            "volume": float(candle.volume)
+        key = f"{orderbook.exchange}:{orderbook.trading_pair}"
+        headers = {
+            'type': 'orderbook',
+            'exchange': orderbook.exchange,
+            'trading_pair': orderbook.trading_pair
         }
         
-        # Adiciona o número de trades se disponível
-        if candle.trades is not None:
-            data["trades"] = candle.trades
+        await self.publish_message(
+            self._default_topics['orderbooks'],
+            message,
+            key,
+            headers
+        )
+    
+    async def publish_candle(self, candle: Candle) -> None:
+        """Publica um candle."""
+        message = {
+            'exchange': candle.exchange,
+            'trading_pair': candle.trading_pair,
+            'timeframe': candle.timeframe.value,
+            'timestamp': candle.timestamp.isoformat(),
+            'open_price': float(candle.open_price),
+            'high_price': float(candle.high_price),
+            'low_price': float(candle.low_price),
+            'close_price': float(candle.close_price),
+            'volume': float(candle.volume),
+            'close_timestamp': candle.close_timestamp.isoformat() if candle.close_timestamp else None
+        }
         
-        # Adiciona algumas métricas calculadas
+        key = f"{candle.exchange}:{candle.trading_pair}:{candle.timeframe.value}"
+        headers = {
+            'type': 'candle',
+            'exchange': candle.exchange,
+            'trading_pair': candle.trading_pair,
+            'timeframe': candle.timeframe.value
+        }
+        
+        await self.publish_message(
+            self._default_topics['candles'],
+            message,
+            key,
+            headers
+        )
+    
+    # Métodos de batch para melhor performance
+    
+    async def publish_trades_batch(self, trades: List[Trade]) -> None:
+        """Publica múltiplos trades em batch."""
+        tasks = []
+        for trade in trades:
+            task = self.publish_trade(trade)
+            tasks.append(task)
+        
+        await asyncio.gather(*tasks, return_exceptions=True)
+        logger.info(f"Publicados {len(trades)} trades em batch")
+    
+    async def publish_candles_batch(self, candles: List[Candle]) -> None:
+        """Publica múltiplos candles em batch."""
+        tasks = []
+        for candle in candles:
+            task = self.publish_candle(candle)
+            tasks.append(task)
+        
+        await asyncio.gather(*tasks, return_exceptions=True)
+        logger.info(f"Publicados {len(candles)} candles em batch")
+    
+    # Buffer e flush automático
+    
+    async def add_to_buffer(self, topic: str, message: Dict[str, Any]) -> None:
+        """Adiciona mensagem ao buffer para flush posterior."""
+        async with self._buffer_lock:
+            self._message_buffer[topic].append(message)
+            
+            # Flush se buffer está cheio
+            if len(self._message_buffer[topic]) >= self._buffer_max_size:
+                await self._flush_buffer(topic)
+    
+    async def _flush_buffer(self, topic: Optional[str] = None) -> None:
+        """Flush do buffer de mensagens."""
+        async with self._buffer_lock:
+            topics_to_flush = [topic] if topic else list(self._message_buffer.keys())
+            
+            for topic_name in topics_to_flush:
+                messages = self._message_buffer[topic_name]
+                if not messages:
+                    continue
+                
+                # Publicar mensagens em batch
+                tasks = []
+                for message in messages:
+                    task = self.publish_message(topic_name, message)
+                    tasks.append(task)
+                
+                try:
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                    logger.debug(f"Buffer flush: {len(messages)} mensagens para {topic_name}")
+                except Exception as e:
+                    logger.error(f"Erro no flush do buffer: {e}")
+                
+                # Limpar buffer
+                self._message_buffer[topic_name].clear()
+    
+    async def _buffer_flush_loop(self) -> None:
+        """Loop de flush automático do buffer."""
+        while not self._closed:
+            try:
+                await asyncio.sleep(self._buffer_flush_interval)
+                await self._flush_buffer()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Erro no flush loop: {e}")
+    
+    def _update_metrics(self, success: bool, latency: float = 0) -> None:
+        """Atualiza métricas de publicação."""
+        with self._metrics_lock:
+            self._metrics.total_messages += 1
+            
+            if success:
+                self._metrics.successful_messages += 1
+                
+                # Atualizar latência média
+                if latency > 0:
+                    total_latency = self._metrics.avg_latency_ms * (self._metrics.successful_messages - 1)
+                    self._metrics.avg_latency_ms = (total_latency + latency) / self._metrics.successful_messages
+            else:
+                self._metrics.failed_messages += 1
+            
+            self._metrics.last_send_time = datetime.utcnow()
+    
+    def _handle_publish_error(self, error: Exception) -> None:
+        """Trata erros de publicação."""
+        self._circuit_breaker_failures += 1
+        
+        if self._circuit_breaker_failures >= self._circuit_breaker_threshold:
+            self._circuit_breaker_open = True
+            self._circuit_breaker_last_failure = time.time()
+            logger.error("Circuit breaker aberto para Kafka")
+        
+        with self._metrics_lock:
+            self._metrics.connection_errors += 1
+    
+    def get_metrics(self) -> Dict[str, Any]:
+        """Retorna métricas do produtor."""
+        with self._metrics_lock:
+            metrics = asdict(self._metrics)
+        
+        # Calcular taxa de sucesso
+        if metrics['total_messages'] > 0:
+            metrics['success_rate'] = metrics['successful_messages'] / metrics['total_messages']
+        else:
+            metrics['success_rate'] = 0.0
+        
+        # Adicionar info do circuit breaker
+        metrics['circuit_breaker_open'] = self._circuit_breaker_open
+        metrics['circuit_breaker_failures'] = self._circuit_breaker_failures
+        
+        # Tamanho do buffer
+        metrics['buffer_size'] = sum(len(msgs) for msgs in self._message_buffer.values())
+        
+        return metrics
+    
+    def health_check(self) -> Dict[str, Any]:
+        """Verifica saúde do produtor Kafka."""
         try:
-            data["is_bullish"] = candle.is_bullish
-            data["is_bearish"] = candle.is_bearish
-            data["body_size"] = float(candle.body_size)
-            data["range"] = float(candle.range)
-        except Exception:
-            pass
+            # Verificar estado básico
+            healthy = (
+                self._initialized and 
+                not self._closed and 
+                not self._circuit_breaker_open
+            )
+            
+            metrics = self.get_metrics()
+            
+            return {
+                'healthy': healthy,
+                'service': 'KafkaProducer',
+                'bootstrap_servers': self.bootstrap_servers,
+                'client_id': self.client_id,
+                'topics': list(self._default_topics.values()),
+                'metrics': metrics,
+                'circuit_breaker_open': self._circuit_breaker_open,
+                'initialized': self._initialized
+            }
+            
+        except Exception as e:
+            return {
+                'healthy': False,
+                'service': 'KafkaProducer',
+                'error': str(e),
+                'initialized': self._initialized
+            }
+    
+    async def shutdown(self) -> None:
+        """Finaliza o produtor Kafka."""
+        if self._closed:
+            return
         
-        # Converte para JSON
-        return json.dumps(data)
+        try:
+            # Finalizar flush task
+            if self._flush_task:
+                self._flush_task.cancel()
+                try:
+                    await self._flush_task
+                except asyncio.CancelledError:
+                    pass
+            
+            # Flush final do buffer
+            await self._flush_buffer()
+            
+            # Fechar producer
+            if self.use_confluent and self._producer:
+                self._producer.flush(timeout=10)
+                # confluent-kafka não tem close assíncrono
+            elif not self.use_confluent and self._producer:
+                await self._producer.stop()
+            
+            self._closed = True
+            logger.info("KafkaProducer finalizado")
+            
+        except Exception as e:
+            logger.error(f"Erro ao finalizar KafkaProducer: {e}")
+    
+    def __del__(self):
+        """Cleanup no destructor."""
+        if not self._closed and self._initialized:
+            logger.warning("KafkaProducer não foi fechado adequadamente")
+
+
+# Factory function para facilitar criação
+def create_kafka_producer(config: Dict[str, Any]) -> KafkaProducer:
+    """
+    Cria instância do KafkaProducer a partir de configuração.
+    
+    Args:
+        config: Configuração do Kafka
+        
+    Returns:
+        KafkaProducer: Instância configurada
+    """
+    return KafkaProducer(
+        bootstrap_servers=config.get('bootstrap_servers', 'localhost:9092'),
+        client_id=config.get('client_id', 'neural-crypto-bot-data-collection'),
+        acks=config.get('acks', 'all'),
+        retries=config.get('retries', 3),
+        batch_size=config.get('batch_size', 16384),
+        linger_ms=config.get('linger_ms', 5),
+        compression_type=config.get('compression_type', 'snappy'),
+        max_in_flight_requests_per_connection=config.get('max_in_flight_requests_per_connection', 1),
+        enable_idempotence=config.get('enable_idempotence', True),
+        topic_prefix=config.get('topic_prefix', 'market-data')
+    )

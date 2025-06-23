@@ -1,891 +1,683 @@
 """
-Sistema de balanceamento de carga para distribuição de requisições.
+Balanceador de carga para exchanges de criptomoedas.
 
-Este módulo implementa mecanismos para distribuir requisições entre
-múltiplas instâncias, evitando sobrecarga de servidores e melhorando
-a disponibilidade e confiabilidade do sistema.
+Este módulo implementa balanceamento de carga inteligente para distribuir
+requisições entre múltiplas exchanges e instâncias, otimizando performance
+e garantindo alta disponibilidade.
 """
 import asyncio
 import logging
-import random
 import time
-from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Any, Callable, Awaitable, Set, Tuple
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Any, Optional, Callable, Awaitable, TypeVar, Generic, Union
+import statistics
+import random
+from collections import defaultdict, deque
 
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-
+from src.data_collection.adapters.exchange_adapter_interface import ExchangeAdapterInterface
 
 logger = logging.getLogger(__name__)
 
 
-class BalancingStrategy(str, Enum):
+class BalancingStrategy(Enum):
     """Estratégias de balanceamento de carga."""
-    ROUND_ROBIN = "round_robin"           # Alternância circular
-    RANDOM = "random"                     # Seleção aleatória
-    LEAST_CONNECTIONS = "least_conn"      # Menor número de conexões ativas
-    LEAST_RESPONSE_TIME = "least_time"    # Menor tempo de resposta médio
-    IP_HASH = "ip_hash"                   # Hash baseado no IP
-    WEIGHTED = "weighted"                 # Ponderado por capacidade/peso
-    LEAST_REQUESTS = "least_requests"     # Menor número de requisições recentes
+    ROUND_ROBIN = "round_robin"
+    WEIGHTED_ROUND_ROBIN = "weighted_round_robin"
+    LEAST_CONNECTIONS = "least_connections"
+    LEAST_RESPONSE_TIME = "least_response_time"
+    HEALTH_AWARE = "health_aware"
+    ADAPTIVE = "adaptive"
+    RANDOM = "random"
 
 
-class InstanceStatus(str, Enum):
-    """Status possíveis de uma instância."""
-    ONLINE = "online"        # Instância disponível
-    OFFLINE = "offline"      # Instância indisponível
-    DEGRADED = "degraded"    # Instância com performance comprometida
-    MAINTENANCE = "maintenance"  # Instância em manutenção
-    STANDBY = "standby"      # Instância em espera
-    OVERLOADED = "overloaded"  # Instância sobrecarregada
+class InstanceState(Enum):
+    """Estados possíveis de uma instância."""
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    UNHEALTHY = "unhealthy"
+    DRAINING = "draining"
+    OFFLINE = "offline"
 
 
 @dataclass
 class InstanceMetrics:
-    """Métricas de uma instância para balanceamento de carga."""
+    """Métricas de uma instância de exchange."""
     active_connections: int = 0
     total_requests: int = 0
-    recent_requests: int = 0  # Últimos 60 segundos
-    success_count: int = 0
-    error_count: int = 0
+    successful_requests: int = 0
+    failed_requests: int = 0
     avg_response_time: float = 0.0
-    last_used: datetime = datetime.utcnow()
-    last_check: datetime = datetime.utcnow()
-    consecutive_failures: int = 0
-    status: InstanceStatus = InstanceStatus.ONLINE
-    weight: int = 1  # Peso para balanceamento ponderado
-
-
-T = TypeVar('T')
-
-
-class LoadBalancer(Generic[T]):
-    """
-    Balanceador de carga para distribuir requisições entre instâncias.
+    last_request_time: Optional[datetime] = None
+    last_response_time: Optional[datetime] = None
+    last_error_time: Optional[datetime] = None
+    error_rate: float = 0.0
     
-    Implementa várias estratégias de balanceamento para distribuir
-    requisições entre múltiplas instâncias de servidores ou serviços.
+    # Janelas deslizantes para métricas
+    response_times: deque = field(default_factory=lambda: deque(maxlen=100))
+    error_count_window: deque = field(default_factory=lambda: deque(maxlen=50))
+    
+    def update_request_metrics(self, response_time: float, success: bool):
+        """Atualiza métricas de requisição."""
+        self.total_requests += 1
+        self.last_request_time = datetime.utcnow()
+        
+        if success:
+            self.successful_requests += 1
+            self.last_response_time = datetime.utcnow()
+            self.response_times.append(response_time)
+            
+            # Calcula média de tempo de resposta
+            if self.response_times:
+                self.avg_response_time = statistics.mean(self.response_times)
+        else:
+            self.failed_requests += 1
+            self.last_error_time = datetime.utcnow()
+            self.error_count_window.append(datetime.utcnow())
+        
+        # Calcula taxa de erro
+        if self.total_requests > 0:
+            self.error_rate = self.failed_requests / self.total_requests
+    
+    def get_recent_error_rate(self, window_minutes: int = 5) -> float:
+        """Calcula taxa de erro recente."""
+        cutoff = datetime.utcnow() - timedelta(minutes=window_minutes)
+        recent_errors = sum(1 for error_time in self.error_count_window if error_time > cutoff)
+        
+        # Estima requisições recentes baseado na taxa atual
+        if self.total_requests > 0:
+            time_since_start = (datetime.utcnow() - (self.last_request_time or datetime.utcnow())).total_seconds() / 60
+            if time_since_start > 0:
+                recent_requests = max(1, int(self.total_requests * (window_minutes / max(1, time_since_start))))
+                return recent_errors / recent_requests
+        
+        return 0.0
+
+
+@dataclass
+class ExchangeInstance:
+    """Instância de uma exchange com suas configurações e métricas."""
+    id: str
+    exchange: ExchangeAdapterInterface
+    weight: float = 1.0
+    priority: int = 1
+    state: InstanceState = InstanceState.HEALTHY
+    metrics: InstanceMetrics = field(default_factory=InstanceMetrics)
+    config: Dict[str, Any] = field(default_factory=dict)
+    
+    # Configurações de saúde
+    max_connections: int = 100
+    max_error_rate: float = 0.1
+    max_response_time: float = 5.0
+    health_check_interval: int = 30
+    
+    # Status de saúde
+    last_health_check: Optional[datetime] = None
+    consecutive_failures: int = 0
+    max_consecutive_failures: int = 3
+    
+    @property
+    def is_available(self) -> bool:
+        """Verifica se a instância está disponível para receber requisições."""
+        return self.state in [InstanceState.HEALTHY, InstanceState.DEGRADED]
+    
+    @property
+    def load_score(self) -> float:
+        """Calcula score de carga (menor é melhor)."""
+        if not self.is_available:
+            return float('inf')
+        
+        # Combina múltiples fatores
+        connection_factor = self.metrics.active_connections / max(1, self.max_connections)
+        response_time_factor = self.metrics.avg_response_time / max(0.1, self.max_response_time)
+        error_rate_factor = self.metrics.error_rate / max(0.01, self.max_error_rate)
+        
+        return (connection_factor + response_time_factor + error_rate_factor) / self.weight
+    
+    async def health_check(self) -> bool:
+        """Executa verificação de saúde da instância."""
+        try:
+            start_time = time.time()
+            
+            # Verifica se a exchange está ativa
+            if hasattr(self.exchange, 'ping'):
+                await self.exchange.ping()
+            else:
+                # Fallback: tenta buscar trading pairs
+                await self.exchange.fetch_trading_pairs()
+            
+            response_time = time.time() - start_time
+            
+            # Atualiza métricas
+            self.metrics.update_request_metrics(response_time, True)
+            self.last_health_check = datetime.utcnow()
+            self.consecutive_failures = 0
+            
+            # Determina estado baseado nas métricas
+            if (self.metrics.error_rate > self.max_error_rate or 
+                self.metrics.avg_response_time > self.max_response_time):
+                self.state = InstanceState.DEGRADED
+            else:
+                self.state = InstanceState.HEALTHY
+            
+            return True
+            
+        except Exception as e:
+            logger.warning(f"Health check falhou para {self.id}: {str(e)}")
+            
+            self.metrics.update_request_metrics(0, False)
+            self.consecutive_failures += 1
+            
+            if self.consecutive_failures >= self.max_consecutive_failures:
+                self.state = InstanceState.UNHEALTHY
+            else:
+                self.state = InstanceState.DEGRADED
+            
+            return False
+
+
+class CircuitBreaker:
+    """
+    Circuit breaker para proteção contra faltas de instâncias.
+    
+    Implementa padrão Circuit Breaker para evitar sobrecarga
+    de instâncias com problemas.
     """
     
     def __init__(
         self,
-        instances: List[T],
-        strategy: BalancingStrategy = BalancingStrategy.ROUND_ROBIN,
-        health_check_interval: int = 60,
-        circuit_breaker_threshold: int = 5,
-        max_retries: int = 3
+        failure_threshold: int = 5,
+        recovery_timeout: int = 60,
+        expected_exception: type = Exception
     ):
-        """
-        Inicializa o balanceador de carga.
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.expected_exception = expected_exception
         
-        Args:
-            instances: Lista de instâncias a serem balanceadas
-            strategy: Estratégia de balanceamento
-            health_check_interval: Intervalo em segundos para verificação de saúde
-            circuit_breaker_threshold: Número de falhas consecutivas para ativar o circuit breaker
-            max_retries: Número máximo de tentativas em caso de falha
-        """
-        self.instances = instances
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.state = 'CLOSED'  # CLOSED, OPEN, HALF_OPEN
+    
+    async def call(self, func: Callable, *args, **kwargs):
+        """Executa função protegida pelo circuit breaker."""
+        if self.state == 'OPEN':
+            if (datetime.utcnow() - self.last_failure_time).total_seconds() > self.recovery_timeout:
+                self.state = 'HALF_OPEN'
+            else:
+                raise Exception("Circuit breaker is OPEN")
+        
+        try:
+            result = await func(*args, **kwargs)
+            self._on_success()
+            return result
+        except self.expected_exception as e:
+            self._on_failure()
+            raise e
+    
+    def _on_success(self):
+        """Chamado quando operação é bem-sucedida."""
+        self.failure_count = 0
+        self.state = 'CLOSED'
+    
+    def _on_failure(self):
+        """Chamado quando operação falha."""
+        self.failure_count += 1
+        self.last_failure_time = datetime.utcnow()
+        
+        if self.failure_count >= self.failure_threshold:
+            self.state = 'OPEN'
+
+
+class ExchangeLoadBalancer:
+    """
+    Balanceador de carga principal para exchanges.
+    
+    Gerencia múltiplas instâncias de exchanges, distribui requisições
+    de forma inteligente e monitora saúde das instâncias.
+    """
+    
+    def __init__(
+        self,
+        strategy: BalancingStrategy = BalancingStrategy.ADAPTIVE,
+        health_check_interval: int = 30,
+        enable_circuit_breaker: bool = True
+    ):
         self.strategy = strategy
         self.health_check_interval = health_check_interval
-        self.circuit_breaker_threshold = circuit_breaker_threshold
-        self.max_retries = max_retries
+        self.enable_circuit_breaker = enable_circuit_breaker
         
-        # Índice para round robin
-        self._current_index = 0
+        # Instâncias gerenciadas
+        self._instances: Dict[str, ExchangeInstance] = {}
+        self._instance_groups: Dict[str, List[str]] = defaultdict(list)
         
-        # Métricas por instância
-        self._metrics: Dict[int, InstanceMetrics] = {
-            i: InstanceMetrics() for i in range(len(instances))
-        }
+        # Circuit breakers por instância
+        self._circuit_breakers: Dict[str, CircuitBreaker] = {}
         
-        # Task de verificação de saúde
+        # Estado do balanceador
+        self._current_index = 0  # Para round robin
+        self._last_health_check = datetime.utcnow()
+        
+        # Tasks de controle
         self._health_check_task: Optional[asyncio.Task] = None
+        self._running = False
         
-        # Lock para operações concorrentes
-        self._lock = asyncio.Lock()
-        
-        # Cache para IP hash
-        self._ip_cache: Dict[str, int] = {}
+        # Estatísticas
+        self._stats = {
+            'total_requests': 0,
+            'successful_requests': 0,
+            'failed_requests': 0,
+            'avg_response_time': 0.0,
+            'instance_selections': defaultdict(int)
+        }
     
     async def start(self) -> None:
-        """
-        Inicia o balanceador de carga e a verificação de saúde periódica.
-        """
+        """Inicia o balanceador de carga."""
+        if self._running:
+            return
+        
+        self._running = True
+        
+        # Inicia health checks periódicos
         self._health_check_task = asyncio.create_task(self._health_check_loop())
-        logger.info(f"Balanceador de carga iniciado com estratégia {self.strategy}")
+        
+        logger.info("Load balancer iniciado")
     
     async def stop(self) -> None:
-        """
-        Para o balanceador de carga e a verificação de saúde.
-        """
-        if self._health_check_task and not self._health_check_task.done():
+        """Para o balanceador de carga."""
+        if not self._running:
+            return
+        
+        self._running = False
+        
+        # Cancela health checks
+        if self._health_check_task:
             self._health_check_task.cancel()
             try:
                 await self._health_check_task
             except asyncio.CancelledError:
                 pass
         
-        logger.info("Balanceador de carga parado")
+        logger.info("Load balancer parado")
     
-    def get_all_instances(self) -> List[T]:
+    def add_instance(
+        self,
+        instance_id: str,
+        exchange: ExchangeAdapterInterface,
+        weight: float = 1.0,
+        priority: int = 1,
+        group: Optional[str] = None,
+        **config
+    ) -> None:
         """
-        Retorna todas as instâncias registradas.
-        
-        Returns:
-            List[T]: Lista de todas as instâncias
-        """
-        return self.instances.copy()
-    
-    def get_available_instances(self) -> List[T]:
-        """
-        Retorna todas as instâncias disponíveis (online).
-        
-        Returns:
-            List[T]: Lista de instâncias disponíveis
-        """
-        return [
-            self.instances[i] 
-            for i in range(len(self.instances)) 
-            if self._metrics[i].status == InstanceStatus.ONLINE
-        ]
-    
-    def get_instance_status(self, instance_idx: int) -> InstanceStatus:
-        """
-        Retorna o status de uma instância específica.
+        Adiciona uma instância ao balanceador.
         
         Args:
-            instance_idx: Índice da instância
-            
-        Returns:
-            InstanceStatus: Status atual da instância
+            instance_id: ID único da instância
+            exchange: Adaptador da exchange
+            weight: Peso da instância para balanceamento
+            priority: Prioridade da instância
+            group: Grupo da instância (opcional)
+            **config: Configurações adicionais
         """
-        if instance_idx < 0 or instance_idx >= len(self.instances):
-            raise ValueError(f"Índice de instância inválido: {instance_idx}")
-            
-        return self._metrics[instance_idx].status
+        instance = ExchangeInstance(
+            id=instance_id,
+            exchange=exchange,
+            weight=weight,
+            priority=priority,
+            config=config
+        )
+        
+        self._instances[instance_id] = instance
+        
+        if group:
+            self._instance_groups[group].append(instance_id)
+        
+        # Cria circuit breaker se habilitado
+        if self.enable_circuit_breaker:
+            self._circuit_breakers[instance_id] = CircuitBreaker()
+        
+        logger.info(f"Instância adicionada: {instance_id} (peso: {weight}, prioridade: {priority})")
     
-    def set_instance_status(self, instance_idx: int, status: InstanceStatus) -> None:
+    def remove_instance(self, instance_id: str) -> None:
+        """Remove uma instância do balanceador."""
+        if instance_id in self._instances:
+            instance = self._instances[instance_id]
+            instance.state = InstanceState.OFFLINE
+            
+            del self._instances[instance_id]
+            
+            # Remove dos grupos
+            for group_instances in self._instance_groups.values():
+                if instance_id in group_instances:
+                    group_instances.remove(instance_id)
+            
+            # Remove circuit breaker
+            if instance_id in self._circuit_breakers:
+                del self._circuit_breakers[instance_id]
+            
+            logger.info(f"Instância removida: {instance_id}")
+    
+    async def get_instance(
+        self,
+        group: Optional[str] = None,
+        exclude: Optional[Set[str]] = None
+    ) -> Optional[ExchangeInstance]:
         """
-        Define o status de uma instância específica.
+        Obtém uma instância baseada na estratégia de balanceamento.
         
         Args:
-            instance_idx: Índice da instância
-            status: Novo status da instância
-        """
-        if instance_idx < 0 or instance_idx >= len(self.instances):
-            raise ValueError(f"Índice de instância inválido: {instance_idx}")
-            
-        self._metrics[instance_idx].status = status
-        logger.info(f"Status da instância {instance_idx} alterado para {status}")
-    
-    def get_instance_metrics(self, instance_idx: int) -> InstanceMetrics:
-        """
-        Retorna as métricas de uma instância específica.
-        
-        Args:
-            instance_idx: Índice da instância
+            group: Grupo específico de instâncias (opcional)
+            exclude: IDs de instâncias a excluir (opcional)
             
         Returns:
-            InstanceMetrics: Métricas atuais da instância
+            Instância selecionada ou None se nenhuma disponível
         """
-        if instance_idx < 0 or instance_idx >= len(self.instances):
-            raise ValueError(f"Índice de instância inválido: {instance_idx}")
-            
-        return self._metrics[instance_idx]
+        available_instances = self._get_available_instances(group, exclude)
+        
+        if not available_instances:
+            logger.warning("Nenhuma instância disponível")
+            return None
+        
+        # Seleciona instância baseado na estratégia
+        if self.strategy == BalancingStrategy.ROUND_ROBIN:
+            instance = self._select_round_robin(available_instances)
+        elif self.strategy == BalancingStrategy.WEIGHTED_ROUND_ROBIN:
+            instance = self._select_weighted_round_robin(available_instances)
+        elif self.strategy == BalancingStrategy.LEAST_CONNECTIONS:
+            instance = self._select_least_connections(available_instances)
+        elif self.strategy == BalancingStrategy.LEAST_RESPONSE_TIME:
+            instance = self._select_least_response_time(available_instances)
+        elif self.strategy == BalancingStrategy.HEALTH_AWARE:
+            instance = self._select_health_aware(available_instances)
+        elif self.strategy == BalancingStrategy.ADAPTIVE:
+            instance = self._select_adaptive(available_instances)
+        elif self.strategy == BalancingStrategy.RANDOM:
+            instance = self._select_random(available_instances)
+        else:
+            instance = available_instances[0]  # Fallback
+        
+        if instance:
+            instance.metrics.active_connections += 1
+            self._stats['instance_selections'][instance.id] += 1
+        
+        return instance
     
-    async def execute(
-        self, 
-        operation: Callable[[T], Awaitable[Any]],
-        client_id: Optional[str] = None
+    async def execute_request(
+        self,
+        request_func: Callable[[ExchangeAdapterInterface], Awaitable[Any]],
+        group: Optional[str] = None,
+        max_retries: int = 3,
+        exclude_failed: bool = True
     ) -> Any:
         """
-        Executa uma operação em uma instância selecionada pelo balanceador.
+        Executa uma requisição usando balanceamento de carga.
         
         Args:
-            operation: Função assíncrona que recebe uma instância e retorna um resultado
-            client_id: ID do cliente para estratégias baseadas em hash (opcional)
+            request_func: Função que executa a requisição
+            group: Grupo de instâncias a usar (opcional)
+            max_retries: Número máximo de tentativas
+            exclude_failed: Se deve excluir instâncias que falharam
             
         Returns:
-            Any: Resultado da operação
-            
-        Raises:
-            Exception: Se todas as tentativas falharem
+            Resultado da requisição
         """
-        for attempt in range(self.max_retries):
-            instance_idx = await self._select_instance(client_id)
+        excluded_instances = set()
+        last_exception = None
+        
+        for attempt in range(max_retries + 1):
+            instance = await self.get_instance(
+                group=group,
+                exclude=excluded_instances if exclude_failed else None
+            )
             
-            if instance_idx is None:
-                raise RuntimeError("Nenhuma instância disponível")
-                
-            instance = self.instances[instance_idx]
-            metrics = self._metrics[instance_idx]
-            
-            # Atualiza métricas antes da execução
-            metrics.active_connections += 1
-            metrics.total_requests += 1
-            metrics.recent_requests += 1
-            metrics.last_used = datetime.utcnow()
+            if not instance:
+                break
             
             start_time = time.time()
+            success = False
             
             try:
-                result = await operation(instance)
+                self._stats['total_requests'] += 1
                 
-                # Atualiza métricas após execução bem-sucedida
-                metrics.success_count += 1
-                metrics.consecutive_failures = 0
+                # Executa com circuit breaker se habilitado
+                if self.enable_circuit_breaker and instance.id in self._circuit_breakers:
+                    cb = self._circuit_breakers[instance.id]
+                    result = await cb.call(request_func, instance.exchange)
+                else:
+                    result = await request_func(instance.exchange)
                 
-                # Atualiza tempo médio de resposta
-                elapsed = time.time() - start_time
-                metrics.avg_response_time = (metrics.avg_response_time * 0.9) + (elapsed * 0.1)
+                success = True
+                response_time = time.time() - start_time
+                
+                # Atualiza métricas
+                instance.metrics.update_request_metrics(response_time, True)
+                self._stats['successful_requests'] += 1
                 
                 return result
                 
             except Exception as e:
-                # Atualiza métricas após falha
-                metrics.error_count += 1
-                metrics.consecutive_failures += 1
+                response_time = time.time() - start_time
+                instance.metrics.update_request_metrics(response_time, False)
+                self._stats['failed_requests'] += 1
                 
-                # Verifica se deve ativar o circuit breaker
-                if metrics.consecutive_failures >= self.circuit_breaker_threshold:
-                    metrics.status = InstanceStatus.DEGRADED
-                    logger.warning(f"Instância {instance_idx} marcada como degradada após {metrics.consecutive_failures} falhas consecutivas")
+                if exclude_failed:
+                    excluded_instances.add(instance.id)
                 
-                logger.error(f"Erro ao executar operação na instância {instance_idx}: {str(e)}")
+                last_exception = e
+                logger.warning(f"Requisição falhou na instância {instance.id}: {str(e)}")
                 
-                # Se esta foi a última tentativa, propaga a exceção
-                if attempt == self.max_retries - 1:
-                    raise
-            
             finally:
-                # Decrementa conexões ativas
-                metrics.active_connections = max(0, metrics.active_connections - 1)
+                instance.metrics.active_connections = max(0, instance.metrics.active_connections - 1)
         
-        # Este ponto não deveria ser alcançado, mas por segurança
-        raise RuntimeError("Todas as tentativas falharam")
-    
-    async def _select_instance(self, client_id: Optional[str] = None) -> Optional[int]:
-        """
-        Seleciona uma instância com base na estratégia de balanceamento.
-        
-        Args:
-            client_id: ID do cliente para estratégias baseadas em hash (opcional)
-            
-        Returns:
-            Optional[int]: Índice da instância selecionada ou None se nenhuma disponível
-        """
-        # Obtém instâncias disponíveis
-        available_indices = [
-            i for i in range(len(self.instances)) 
-            if self._metrics[i].status in [InstanceStatus.ONLINE, InstanceStatus.DEGRADED]
-        ]
-        
-        if not available_indices:
-            return None
-            
-        # Aplica a estratégia de balanceamento
-        if self.strategy == BalancingStrategy.ROUND_ROBIN:
-            return await self._select_round_robin(available_indices)
-            
-        elif self.strategy == BalancingStrategy.RANDOM:
-            return random.choice(available_indices)
-            
-        elif self.strategy == BalancingStrategy.LEAST_CONNECTIONS:
-            return await self._select_least_connections(available_indices)
-            
-        elif self.strategy == BalancingStrategy.LEAST_RESPONSE_TIME:
-            return await self._select_least_response_time(available_indices)
-            
-        elif self.strategy == BalancingStrategy.IP_HASH:
-            return await self._select_ip_hash(available_indices, client_id)
-            
-        elif self.strategy == BalancingStrategy.WEIGHTED:
-            return await self._select_weighted(available_indices)
-            
-        elif self.strategy == BalancingStrategy.LEAST_REQUESTS:
-            return await self._select_least_requests(available_indices)
-            
+        # Se chegou aqui, todas as tentativas falharam
+        if last_exception:
+            raise last_exception
         else:
-            # Estratégia não reconhecida, usa round robin como fallback
-            return await self._select_round_robin(available_indices)
+            raise Exception("Nenhuma instância disponível para processar a requisição")
     
-    async def _select_round_robin(self, available_indices: List[int]) -> int:
-        """
-        Seleciona uma instância usando a estratégia Round Robin.
+    def _get_available_instances(
+        self,
+        group: Optional[str] = None,
+        exclude: Optional[Set[str]] = None
+    ) -> List[ExchangeInstance]:
+        """Obtém lista de instâncias disponíveis."""
+        instances = []
         
-        Args:
-            available_indices: Lista de índices de instâncias disponíveis
-            
-        Returns:
-            int: Índice da instância selecionada
-        """
-        async with self._lock:
-            # Incrementa o índice circular
-            self._current_index = (self._current_index + 1) % len(self.instances)
-            
-            # Encontra o próximo índice disponível
-            while self._current_index not in available_indices:
-                self._current_index = (self._current_index + 1) % len(self.instances)
-            
-            return self._current_index
+        # Filtra por grupo se especificado
+        if group and group in self._instance_groups:
+            candidate_ids = self._instance_groups[group]
+        else:
+            candidate_ids = list(self._instances.keys())
+        
+        # Filtra instâncias disponíveis
+        for instance_id in candidate_ids:
+            if instance_id in self._instances:
+                instance = self._instances[instance_id]
+                
+                if (instance.is_available and 
+                    (not exclude or instance_id not in exclude)):
+                    instances.append(instance)
+        
+        return sorted(instances, key=lambda x: x.priority)
     
-    async def _select_least_connections(self, available_indices: List[int]) -> int:
-        """
-        Seleciona a instância com o menor número de conexões ativas.
+    def _select_round_robin(self, instances: List[ExchangeInstance]) -> ExchangeInstance:
+        """Seleção round robin."""
+        if not instances:
+            return None
         
-        Args:
-            available_indices: Lista de índices de instâncias disponíveis
-            
-        Returns:
-            int: Índice da instância selecionada
-        """
-        min_connections = float('inf')
-        selected_idx = available_indices[0]
-        
-        for idx in available_indices:
-            connections = self._metrics[idx].active_connections
-            
-            if connections < min_connections:
-                min_connections = connections
-                selected_idx = idx
-        
-        return selected_idx
+        instance = instances[self._current_index % len(instances)]
+        self._current_index += 1
+        return instance
     
-    async def _select_least_response_time(self, available_indices: List[int]) -> int:
-        """
-        Seleciona a instância com o menor tempo médio de resposta.
+    def _select_weighted_round_robin(self, instances: List[ExchangeInstance]) -> ExchangeInstance:
+        """Seleção round robin ponderada."""
+        if not instances:
+            return None
         
-        Args:
-            available_indices: Lista de índices de instâncias disponíveis
-            
-        Returns:
-            int: Índice da instância selecionada
-        """
-        min_time = float('inf')
-        selected_idx = available_indices[0]
+        # Cria lista expandida baseada nos pesos
+        weighted_instances = []
+        for instance in instances:
+            weight_count = max(1, int(instance.weight * 10))
+            weighted_instances.extend([instance] * weight_count)
         
-        for idx in available_indices:
-            response_time = self._metrics[idx].avg_response_time
-            
-            # Se não houver dados suficientes, usa o número de conexões como critério secundário
-            if response_time == 0.0:
-                response_time = self._metrics[idx].active_connections
-            
-            if response_time < min_time:
-                min_time = response_time
-                selected_idx = idx
-        
-        return selected_idx
+        instance = weighted_instances[self._current_index % len(weighted_instances)]
+        self._current_index += 1
+        return instance
     
-    async def _select_ip_hash(self, available_indices: List[int], client_id: Optional[str]) -> int:
-        """
-        Seleciona uma instância com base no hash do ID do cliente.
+    def _select_least_connections(self, instances: List[ExchangeInstance]) -> ExchangeInstance:
+        """Seleção por menor número de conexões."""
+        if not instances:
+            return None
         
-        Args:
-            available_indices: Lista de índices de instâncias disponíveis
-            client_id: ID do cliente a ser usado para o hash
-            
-        Returns:
-            int: Índice da instância selecionada
-        """
-        if not client_id:
-            # Se não houver ID de cliente, usa round robin como fallback
-            return await self._select_round_robin(available_indices)
-        
-        # Verifica se o cliente já está no cache
-        if client_id in self._ip_cache:
-            cached_idx = self._ip_cache[client_id]
-            
-            # Verifica se a instância ainda está disponível
-            if cached_idx in available_indices:
-                return cached_idx
-        
-        # Calcula o hash do ID do cliente
-        hash_value = hash(client_id) % len(available_indices)
-        selected_idx = available_indices[hash_value]
-        
-        # Armazena no cache
-        self._ip_cache[client_id] = selected_idx
-        
-        return selected_idx
+        return min(instances, key=lambda x: x.metrics.active_connections)
     
-    async def _select_weighted(self, available_indices: List[int]) -> int:
-        """
-        Seleciona uma instância com base em pesos.
+    def _select_least_response_time(self, instances: List[ExchangeInstance]) -> ExchangeInstance:
+        """Seleção por menor tempo de resposta."""
+        if not instances:
+            return None
         
-        Args:
-            available_indices: Lista de índices de instâncias disponíveis
-            
-        Returns:
-            int: Índice da instância selecionada
-        """
-        # Calcula o peso total
-        total_weight = sum(self._metrics[idx].weight for idx in available_indices)
-        
-        if total_weight <= 0:
-            # Se não houver pesos positivos, usa round robin como fallback
-            return await self._select_round_robin(available_indices)
-        
-        # Seleciona aleatoriamente com base nos pesos
-        value = random.uniform(0, total_weight)
-        
-        cumulative_weight = 0
-        for idx in available_indices:
-            cumulative_weight += self._metrics[idx].weight
-            if value <= cumulative_weight:
-                return idx
-        
-        # Caso excepcional (não deveria ocorrer)
-        return available_indices[0]
+        return min(instances, key=lambda x: x.metrics.avg_response_time)
     
-    async def _select_least_requests(self, available_indices: List[int]) -> int:
-        """
-        Seleciona a instância com o menor número de requisições recentes.
+    def _select_health_aware(self, instances: List[ExchangeInstance]) -> ExchangeInstance:
+        """Seleção baseada na saúde das instâncias."""
+        if not instances:
+            return None
         
-        Args:
-            available_indices: Lista de índices de instâncias disponíveis
-            
-        Returns:
-            int: Índice da instância selecionada
-        """
-        min_requests = float('inf')
-        selected_idx = available_indices[0]
+        # Prioriza instâncias saudáveis
+        healthy_instances = [i for i in instances if i.state == InstanceState.HEALTHY]
+        if healthy_instances:
+            return min(healthy_instances, key=lambda x: x.load_score)
         
-        for idx in available_indices:
-            requests = self._metrics[idx].recent_requests
-            
-            if requests < min_requests:
-                min_requests = requests
-                selected_idx = idx
+        # Fallback para instâncias degradadas
+        degraded_instances = [i for i in instances if i.state == InstanceState.DEGRADED]
+        if degraded_instances:
+            return min(degraded_instances, key=lambda x: x.load_score)
         
-        return selected_idx
+        return instances[0]
+    
+    def _select_adaptive(self, instances: List[ExchangeInstance]) -> ExchangeInstance:
+        """Seleção adaptativa combinando múltiplos fatores."""
+        if not instances:
+            return None
+        
+        # Combina vários fatores para seleção inteligente
+        return min(instances, key=lambda x: x.load_score)
+    
+    def _select_random(self, instances: List[ExchangeInstance]) -> ExchangeInstance:
+        """Seleção aleatória."""
+        if not instances:
+            return None
+        
+        return random.choice(instances)
     
     async def _health_check_loop(self) -> None:
-        """
-        Loop de verificação de saúde periódica das instâncias.
-        """
-        while True:
+        """Loop de verificação de saúde das instâncias."""
+        while self._running:
             try:
-                await self._perform_health_check()
+                await self._perform_health_checks()
                 await asyncio.sleep(self.health_check_interval)
-                
             except asyncio.CancelledError:
                 break
-                
             except Exception as e:
-                logger.error(f"Erro na verificação de saúde: {str(e)}")
-                await asyncio.sleep(10)  # Espera um pouco antes de tentar novamente
+                logger.error(f"Erro no health check loop: {str(e)}")
+                await asyncio.sleep(5)  # Espera antes de tentar novamente
     
-    async def _perform_health_check(self) -> None:
-        """
-        Realiza verificação de saúde em todas as instâncias.
-        """
-        logger.debug("Iniciando verificação de saúde das instâncias")
+    async def _perform_health_checks(self) -> None:
+        """Executa verificação de saúde em todas as instâncias."""
+        if not self._instances:
+            return
         
-        # Reseta contadores de requisições recentes
-        for metrics in self._metrics.values():
-            metrics.recent_requests = 0
-            metrics.last_check = datetime.utcnow()
+        logger.debug(f"Executando health check em {len(self._instances)} instâncias")
         
-        # Para cada instância, verifica o status
-        for idx, instance in enumerate(self.instances):
-            metrics = self._metrics[idx]
-            
-            if metrics.status == InstanceStatus.MAINTENANCE:
-                # Ignora instâncias em manutenção
-                continue
-                
+        # Executa health checks em paralelo
+        tasks = []
+        for instance in self._instances.values():
+            task = asyncio.create_task(instance.health_check())
+            tasks.append((instance.id, task))
+        
+        # Aguarda resultados
+        for instance_id, task in tasks:
             try:
-                # Verifica se a instância implementa um método de verificação de saúde
-                if hasattr(instance, 'health_check') and callable(getattr(instance, 'health_check')):
-                    is_healthy = await instance.health_check()
-                    
-                    if is_healthy:
-                        # Se estava degradada e agora está saudável, restaura para online
-                        if metrics.status == InstanceStatus.DEGRADED:
-                            metrics.status = InstanceStatus.ONLINE
-                            logger.info(f"Instância {idx} restaurada para online")
-                    else:
-                        metrics.status = InstanceStatus.DEGRADED
-                        logger.warning(f"Instância {idx} marcada como degradada após falha na verificação de saúde")
-                
-                # Se não tiver muitas falhas recentes, considera online
-                elif metrics.status == InstanceStatus.DEGRADED and metrics.consecutive_failures < self.circuit_breaker_threshold / 2:
-                    metrics.status = InstanceStatus.ONLINE
-                    logger.info(f"Instância {idx} restaurada para online")
-                
+                result = await task
+                if not result:
+                    logger.warning(f"Health check falhou para instância {instance_id}")
             except Exception as e:
-                # Falha na verificação de saúde
-                logger.error(f"Erro na verificação de saúde da instância {idx}: {str(e)}")
-                metrics.status = InstanceStatus.DEGRADED
-                
-        logger.debug("Verificação de saúde das instâncias concluída")
+                logger.error(f"Erro no health check da instância {instance_id}: {str(e)}")
+        
+        self._last_health_check = datetime.utcnow()
     
-    def add_instance(self, instance: T, weight: int = 1) -> int:
-        """
-        Adiciona uma nova instância ao balanceador.
-        
-        Args:
-            instance: Instância a ser adicionada
-            weight: Peso da instância para balanceamento ponderado
-            
-        Returns:
-            int: Índice da nova instância
-        """
-        idx = len(self.instances)
-        self.instances.append(instance)
-        
-        # Inicializa métricas para a nova instância
-        metrics = InstanceMetrics()
-        metrics.weight = weight
-        self._metrics[idx] = metrics
-        
-        logger.info(f"Nova instância adicionada com índice {idx}")
-        return idx
+    def get_instance_by_id(self, instance_id: str) -> Optional[ExchangeInstance]:
+        """Obtém instância pelo ID."""
+        return self._instances.get(instance_id)
     
-    def remove_instance(self, instance_idx: int) -> None:
-        """
-        Remove uma instância do balanceador.
-        
-        Args:
-            instance_idx: Índice da instância a ser removida
-        """
-        if instance_idx < 0 or instance_idx >= len(self.instances):
-            raise ValueError(f"Índice de instância inválido: {instance_idx}")
-            
-        # Coloca a instância em modo de manutenção para não receber novas requisições
-        self._metrics[instance_idx].status = InstanceStatus.MAINTENANCE
-        
-        # Aguarda até que não haja conexões ativas
-        # Nota: em uma implementação real, isso seria feito de forma assíncrona
-        logger.info(f"Instância {instance_idx} marcada para remoção, aguardando conexões ativas")
-        
-        # Remove a instância (em uma implementação real, seria melhor apenas marcar como removida)
-        # self.instances.pop(instance_idx)
-        # del self._metrics[instance_idx]
-        
-        logger.info(f"Instância {instance_idx} removida com sucesso")
+    def get_all_instances(self) -> List[ExchangeInstance]:
+        """Obtém todas as instâncias."""
+        return list(self._instances.values())
     
-    def update_weight(self, instance_idx: int, weight: int) -> None:
-        """
-        Atualiza o peso de uma instância para balanceamento ponderado.
-        
-        Args:
-            instance_idx: Índice da instância
-            weight: Novo peso
-        """
-        if instance_idx < 0 or instance_idx >= len(self.instances):
-            raise ValueError(f"Índice de instância inválido: {instance_idx}")
-            
-        self._metrics[instance_idx].weight = weight
-        logger.info(f"Peso da instância {instance_idx} atualizado para {weight}")
+    def get_available_instances(self) -> List[ExchangeInstance]:
+        """Obtém apenas instâncias disponíveis."""
+        return [instance for instance in self._instances.values() if instance.is_available]
     
-    def set_strategy(self, strategy: BalancingStrategy) -> None:
-        """
-        Altera a estratégia de balanceamento.
+    def get_instance_stats(self) -> Dict[str, Any]:
+        """Obtém estatísticas das instâncias."""
+        stats = {
+            'total_instances': len(self._instances),
+            'available_instances': len(self.get_available_instances()),
+            'instances': {}
+        }
         
-        Args:
-            strategy: Nova estratégia
-        """
-        self.strategy = strategy
-        logger.info(f"Estratégia de balanceamento alterada para {strategy}")
+        for instance_id, instance in self._instances.items():
+            stats['instances'][instance_id] = {
+                'state': instance.state.value,
+                'weight': instance.weight,
+                'priority': instance.priority,
+                'metrics': {
+                    'active_connections': instance.metrics.active_connections,
+                    'total_requests': instance.metrics.total_requests,
+                    'successful_requests': instance.metrics.successful_requests,
+                    'failed_requests': instance.metrics.failed_requests,
+                    'error_rate': instance.metrics.error_rate,
+                    'avg_response_time': instance.metrics.avg_response_time,
+                    'load_score': instance.load_score
+                }
+            }
         
-        # Reseta o índice para round robin
-        self._current_index = 0
+        return stats
+    
+    def get_balancer_stats(self) -> Dict[str, Any]:
+        """Obtém estatísticas do balanceador."""
+        return {
+            'strategy': self.strategy.value,
+            'running': self._running,
+            'last_health_check': self._last_health_check.isoformat() if self._last_health_check else None,
+            'requests': self._stats,
+            'instances': self.get_instance_stats()
+        }
+    
+    def reset_stats(self) -> None:
+        """Reseta estatísticas do balanceador."""
+        self._stats = {
+            'total_requests': 0,
+            'successful_requests': 0,
+            'failed_requests': 0,
+            'avg_response_time': 0.0,
+            'instance_selections': defaultdict(int)
+        }
         
-        # Limpa o cache de IP hash
-        if strategy != BalancingStrategy.IP_HASH:
-            self._ip_cache.clear()
+        # Reseta métricas das instâncias
+        for instance in self._instances.values():
+            instance.metrics = InstanceMetrics()
 
 
-class ExchangeLoadBalancer(LoadBalancer[ExchangeAdapterInterface]):
-    """
-    Balanceador de carga específico para adaptadores de exchanges.
-    
-    Estende o balanceador genérico com funcionalidades específicas
-    para balancear requisições entre múltiplas instâncias de exchanges.
-    """
-    
-    def __init__(
-        self,
-        instances: List[ExchangeAdapterInterface],
-        strategy: BalancingStrategy = BalancingStrategy.ROUND_ROBIN,
-        health_check_interval: int = 60,
-        circuit_breaker_threshold: int = 5,
-        max_retries: int = 3,
-        rate_limit_buffer: float = 0.8  # 80% do limite de taxa
-    ):
-        """
-        Inicializa o balanceador de carga para exchanges.
-        
-        Args:
-            instances: Lista de adaptadores de exchange
-            strategy: Estratégia de balanceamento
-            health_check_interval: Intervalo em segundos para verificação de saúde
-            circuit_breaker_threshold: Número de falhas consecutivas para ativar o circuit breaker
-            max_retries: Número máximo de tentativas em caso de falha
-            rate_limit_buffer: Porcentagem do limite de taxa a ser utilizada
-        """
-        super().__init__(
-            instances=instances,
-            strategy=strategy,
-            health_check_interval=health_check_interval,
-            circuit_breaker_threshold=circuit_breaker_threshold,
-            max_retries=max_retries
-        )
-        
-        self.rate_limit_buffer = rate_limit_buffer
-        
-        # Limites de taxa por instância e método
-        self._rate_limits: Dict[int, Dict[str, int]] = {}
-        
-        # Contadores de requisições por instância e método
-        self._request_counters: Dict[int, Dict[str, int]] = {}
-        
-        # Timestamps de reset de limite por instância e método
-        self._reset_times: Dict[int, Dict[str, datetime]] = {}
-    
-    async def _perform_health_check(self) -> None:
-        """
-        Realiza verificação de saúde específica para exchanges.
-        """
-        await super()._perform_health_check()
-        
-        # Verificações adicionais específicas para exchanges
-        for idx, exchange in enumerate(self.instances):
-            metrics = self._metrics[idx]
-            
-            if metrics.status == InstanceStatus.MAINTENANCE:
-                continue
-                
-            try:
-                # Verifica se a exchange está respondendo
-                pairs = await exchange.fetch_trading_pairs()
-                
-                if pairs:
-                    # Atualiza o status para online se estava degradada
-                    if metrics.status == InstanceStatus.DEGRADED:
-                        metrics.status = InstanceStatus.ONLINE
-                        logger.info(f"Exchange {exchange.name} (idx: {idx}) restaurada para online")
-                else:
-                    metrics.status = InstanceStatus.DEGRADED
-                    logger.warning(f"Exchange {exchange.name} (idx: {idx}) marcada como degradada: nenhum par disponível")
-                
-            except Exception as e:
-                logger.error(f"Erro na verificação de saúde da exchange {exchange.name} (idx: {idx}): {str(e)}")
-                metrics.status = InstanceStatus.DEGRADED
-    
-    async def execute_for_trading_pair(
-        self,
-        trading_pair: str,
-        operation: Callable[[ExchangeAdapterInterface], Awaitable[Any]],
-        method_name: str = "generic"
-    ) -> Any:
-        """
-        Executa uma operação para um par de negociação específico.
-        
-        Args:
-            trading_pair: Par de negociação
-            operation: Função assíncrona que recebe um adaptador de exchange
-            method_name: Nome do método para controle de limite de taxa
-            
-        Returns:
-            Any: Resultado da operação
-        """
-        # Filtra instâncias que suportam o par de negociação
-        available_indices = []
-        
-        for idx, exchange in enumerate(self.instances):
-            if (self._metrics[idx].status in [InstanceStatus.ONLINE, InstanceStatus.DEGRADED] and
-                exchange.validate_trading_pair(trading_pair)):
-                
-                # Verifica se o limite de taxa foi atingido
-                if not self._is_rate_limited(idx, method_name):
-                    available_indices.append(idx)
-        
-        if not available_indices:
-            raise ValueError(f"Nenhuma instância disponível para o par {trading_pair}")
-        
-        # Seleciona uma instância entre as disponíveis
-        selected_idx = await self._select_from_indices(available_indices)
-        instance = self.instances[selected_idx]
-        
-        # Incrementa o contador de requisições
-        self._increment_request_counter(selected_idx, method_name)
-        
-        # Executa a operação
-        try:
-            result = await operation(instance)
-            
-            # Atualiza métricas de sucesso
-            metrics = self._metrics[selected_idx]
-            metrics.success_count += 1
-            metrics.consecutive_failures = 0
-            
-            return result
-            
-        except Exception as e:
-            # Atualiza métricas de erro
-            metrics = self._metrics[selected_idx]
-            metrics.error_count += 1
-            metrics.consecutive_failures += 1
-            
-            # Verifica se deve ativar o circuit breaker
-            if metrics.consecutive_failures >= self.circuit_breaker_threshold:
-                metrics.status = InstanceStatus.DEGRADED
-                logger.warning(f"Exchange {instance.name} (idx: {selected_idx}) marcada como degradada após {metrics.consecutive_failures} falhas consecutivas")
-            
-            # Repropaga a exceção
-            raise
-    
-    async def _select_from_indices(self, available_indices: List[int]) -> int:
-        """
-        Seleciona uma instância entre as disponíveis.
-        
-        Args:
-            available_indices: Lista de índices disponíveis
-            
-        Returns:
-            int: Índice selecionado
-        """
-        if self.strategy == BalancingStrategy.LEAST_REQUESTS:
-            # Para exchanges, considera também os limites de taxa
-            min_rate_usage = float('inf')
-            selected_idx = available_indices[0]
-            
-            for idx in available_indices:
-                rate_usage = sum(self._request_counters.get(idx, {}).values())
-                
-                if rate_usage < min_rate_usage:
-                    min_rate_usage = rate_usage
-                    selected_idx = idx
-            
-            return selected_idx
-            
-        elif self.strategy == BalancingStrategy.WEIGHTED:
-            # Para exchanges, ajusta os pesos com base nos limites de taxa
-            weights = []
-            
-            for idx in available_indices:
-                rate_usage = sum(self._request_counters.get(idx, {}).values())
-                rate_limit = sum(self._rate_limits.get(idx, {}).values())
-                
-                if rate_limit > 0:
-                    # Quanto menor o uso proporcional, maior o peso
-                    weight = (1.0 - (rate_usage / rate_limit)) * self._metrics[idx].weight
-                else:
-                    weight = self._metrics[idx].weight
-                
-                weights.append(max(0.1, weight))  # Mínimo de 0.1 para evitar zero
-            
-            # Seleciona aleatoriamente com base nos pesos
-            total_weight = sum(weights)
-            value = random.uniform(0, total_weight)
-            
-            cumulative_weight = 0
-            for i, idx in enumerate(available_indices):
-                cumulative_weight += weights[i]
-                if value <= cumulative_weight:
-                    return idx
-            
-            return available_indices[0]
-            
-        else:
-            # Para outras estratégias, usa a seleção padrão
-            if len(available_indices) == 1:
-                return available_indices[0]
-                
-            # Filtra os índices disponíveis na lista completa para usar as estratégias padrão
-            temp_available = [i for i in range(len(self.instances)) if i in available_indices]
-            selected = await self._select_instance()
-            
-            # Se o selecionado não estiver nos disponíveis, pega o primeiro
-            if selected not in available_indices:
-                return available_indices[0]
-                
-            return selected
-    
-    def set_rate_limit(self, instance_idx: int, method: str, limit: int, reset_seconds: int) -> None:
-        """
-        Define um limite de taxa para uma instância e método.
-        
-        Args:
-            instance_idx: Índice da instância
-            method: Nome do método
-            limit: Número máximo de requisições
-            reset_seconds: Segundos até o reset do limite
-        """
-        if instance_idx < 0 or instance_idx >= len(self.instances):
-            raise ValueError(f"Índice de instância inválido: {instance_idx}")
-            
-        # Inicializa dicionários se necessário
-        if instance_idx not in self._rate_limits:
-            self._rate_limits[instance_idx] = {}
-            self._request_counters[instance_idx] = {}
-            self._reset_times[instance_idx] = {}
-        
-        # Ajusta o limite para o buffer
-        adjusted_limit = int(limit * self.rate_limit_buffer)
-        
-        # Define o limite e o tempo de reset
-        self._rate_limits[instance_idx][method] = adjusted_limit
-        self._request_counters[instance_idx][method] = 0
-        self._reset_times[instance_idx][method] = datetime.utcnow() + timedelta(seconds=reset_seconds)
-        
-        logger.debug(f"Limite de taxa definido para instância {instance_idx}, método {method}: {adjusted_limit}/{reset_seconds}s")
-    
-    def _is_rate_limited(self, instance_idx: int, method: str) -> bool:
-        """
-        Verifica se uma instância atingiu o limite de taxa para um método.
-        
-        Args:
-            instance_idx: Índice da instância
-            method: Nome do método
-            
-        Returns:
-            bool: True se o limite foi atingido, False caso contrário
-        """
-        # Se não houver limite definido, não está limitado
-        if (instance_idx not in self._rate_limits or
-            method not in self._rate_limits[instance_idx]):
-            return False
-        
-        # Verifica se o tempo de reset já passou
-        now = datetime.utcnow()
-        if (instance_idx in self._reset_times and
-            method in self._reset_times[instance_idx] and
-            now >= self._reset_times[instance_idx][method]):
-            
-            # Reseta o contador
-            self._request_counters[instance_idx][method] = 0
-            
-            # Define um novo tempo de reset
-            # Nota: em uma implementação real, isso seria atualizado com base na resposta da API
-            reset_seconds = 60  # 1 minuto como padrão
-            self._reset_times[instance_idx][method] = now + timedelta(seconds=reset_seconds)
-            
-            return False
-        
-        # Verifica se o contador atingiu o limite
-        counter = self._request_counters.get(instance_idx, {}).get(method, 0)
-        limit = self._rate_limits.get(instance_idx, {}).get(method, float('inf'))
-        
-        return counter >= limit
-    
-    def _increment_request_counter(self, instance_idx: int, method: str) -> None:
-        """
-        Incrementa o contador de requisições para uma instância e método.
-        
-        Args:
-            instance_idx: Índice da instância
-            method: Nome do método
-        """
-        if instance_idx not in self._request_counters:
-            self._request_counters[instance_idx] = {}
-            
-        if method not in self._request_counters[instance_idx]:
-            self._request_counters[instance_idx][method] = 0
-            
-        self._request_counters[instance_idx][method] += 1
+# Função de conveniência para criar balanceador com configuração padrão
+def create_exchange_load_balancer(
+    strategy: BalancingStrategy = BalancingStrategy.ADAPTIVE,
+    health_check_interval: int = 30
+) -> ExchangeLoadBalancer:
+    """Cria um balanceador de carga com configuração padrão."""
+    return ExchangeLoadBalancer(
+        strategy=strategy,
+        health_check_interval=health_check_interval,
+        enable_circuit_breaker=True
+    )

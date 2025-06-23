@@ -1,64 +1,96 @@
 """
-Conexão e operações de banco de dados.
+Gerenciador de banco de dados corrigido.
 
-Este módulo implementa a conexão com o banco de dados e
-operações básicas de persistência para os dados coletados.
+Este módulo implementa o gerenciamento de conexões com PostgreSQL
+com pool de conexões, health checks, e operações otimizadas.
 """
 import asyncio
 import logging
+import time
 from datetime import datetime
-from decimal import Decimal
-from typing import Dict, List, Optional, Any, Union, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Union
+from contextlib import asynccontextmanager
+import threading
 
-import asyncpg
-from asyncpg import Pool, Connection
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.declarative import declarative_base
+try:
+    import asyncpg
+    HAS_ASYNCPG = True
+except ImportError:
+    HAS_ASYNCPG = False
 
-from src.data_collection.domain.entities.candle import Candle, TimeFrame
-from src.data_collection.domain.entities.orderbook import OrderBook, OrderBookLevel
-from src.data_collection.domain.entities.trade import Trade, TradeSide
+try:
+    import sqlalchemy as sa
+    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+    from sqlalchemy.orm import declarative_base
+    from sqlalchemy.pool import NullPool
+    HAS_SQLALCHEMY = True
+except ImportError:
+    HAS_SQLALCHEMY = False
+
+from src.data_collection.domain.entities.candle import Candle
+from src.data_collection.domain.entities.orderbook import OrderBook
+from src.data_collection.domain.entities.trade import Trade
 
 
 logger = logging.getLogger(__name__)
-Base = declarative_base()
+
+
+class DatabaseError(Exception):
+    """Erro base para operações de banco de dados."""
+    pass
+
+
+class ConnectionError(DatabaseError):
+    """Erro de conexão com banco de dados."""
+    pass
+
+
+class QueryError(DatabaseError):
+    """Erro em query SQL."""
+    pass
 
 
 class DatabaseManager:
     """
-    Gerenciador de conexão e operações de banco de dados.
+    Gerenciador de banco de dados com pool de conexões.
     
-    Implementa funcionalidades para conectar ao banco de dados
-    e realizar operações de CRUD para os dados coletados.
+    Implementa operações otimizadas para armazenamento de dados de mercado
+    com suporte a transações, batch operations e health checks.
     """
     
     def __init__(
-        self, 
-        host: str,
-        port: int,
-        database: str,
-        user: str,
-        password: str,
+        self,
+        host: str = "localhost",
+        port: int = 5432,
+        database: str = "neural_crypto_bot",
+        user: str = "postgres",
+        password: str = "postgres",
         min_connections: int = 5,
         max_connections: int = 20,
         enable_ssl: bool = False,
-        schema: str = "public"
+        schema: str = "public",
+        statement_timeout: int = 30000,
+        query_timeout: int = 30000
     ):
         """
         Inicializa o gerenciador de banco de dados.
         
         Args:
-            host: Host do banco de dados
-            port: Porta do banco de dados
+            host: Host do PostgreSQL
+            port: Porta do PostgreSQL
             database: Nome do banco de dados
-            user: Usuário do banco de dados
-            password: Senha do banco de dados
-            min_connections: Número mínimo de conexões no pool
-            max_connections: Número máximo de conexões no pool
-            enable_ssl: Se True, habilita SSL na conexão
-            schema: Schema do banco de dados
+            user: Usuário
+            password: Senha
+            min_connections: Mínimo de conexões no pool
+            max_connections: Máximo de conexões no pool
+            enable_ssl: Habilitar SSL
+            schema: Schema padrão
+            statement_timeout: Timeout para statements (ms)
+            query_timeout: Timeout para queries (ms)
         """
+        if not HAS_ASYNCPG and not HAS_SQLALCHEMY:
+            raise DatabaseError("asyncpg ou sqlalchemy são necessários")
+        
         self.host = host
         self.port = port
         self.database = database
@@ -68,841 +100,642 @@ class DatabaseManager:
         self.max_connections = max_connections
         self.enable_ssl = enable_ssl
         self.schema = schema
+        self.statement_timeout = statement_timeout
+        self.query_timeout = query_timeout
         
-        # Pool de conexões para asyncpg
-        self._pool: Optional[Pool] = None
-        
-        # Engine SQLAlchemy para ORM
+        # Pool de conexões
+        self._pool = None
         self._engine = None
-        self._session_factory = None
+        self._session_maker = None
         
-        # Lock para inicialização
+        # Estado
+        self._initialized = False
+        self._closed = False
         self._init_lock = asyncio.Lock()
         
-        # Flag para controle de estado
-        self._initialized = False
+        # Estatísticas
+        self._stats = {
+            'total_queries': 0,
+            'successful_queries': 0,
+            'failed_queries': 0,
+            'total_connections': 0,
+            'active_connections': 0,
+            'avg_query_time': 0.0,
+            'last_query_time': None
+        }
+        self._stats_lock = threading.Lock()
+        
+        # Configurar URL de conexão
+        ssl_mode = "require" if enable_ssl else "disable"
+        self._database_url = (
+            f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{database}"
+            f"?ssl={ssl_mode}&statement_timeout={statement_timeout}&query_timeout={query_timeout}"
+        )
+        
+        logger.info(f"DatabaseManager configurado para {host}:{port}/{database}")
     
     async def initialize(self) -> None:
-        """
-        Inicializa a conexão com o banco de dados.
-        
-        Esta função deve ser chamada antes de usar qualquer
-        operação do banco de dados.
-        """
+        """Inicializa o pool de conexões."""
         async with self._init_lock:
             if self._initialized:
                 return
-                
+            
             try:
-                logger.info(f"Conectando ao banco de dados {self.database} em {self.host}:{self.port}")
+                if HAS_SQLALCHEMY:
+                    await self._initialize_sqlalchemy()
+                elif HAS_ASYNCPG:
+                    await self._initialize_asyncpg()
+                else:
+                    raise DatabaseError("Nenhuma biblioteca de banco disponível")
                 
-                # Inicializa o pool de conexões asyncpg
-                ssl = None
-                if self.enable_ssl:
-                    ssl = True  # Pode ser configurado com mais detalhes se necessário
+                # Testar conexão
+                await self._test_connection()
                 
-                self._pool = await asyncpg.create_pool(
-                    host=self.host,
-                    port=self.port,
-                    database=self.database,
-                    user=self.user,
-                    password=self.password,
-                    min_size=self.min_connections,
-                    max_size=self.max_connections,
-                    ssl=ssl,
-                    command_timeout=60
-                )
-                
-                # Inicializa o engine SQLAlchemy
-                db_url = f"postgresql+asyncpg://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}"
-                self._engine = create_async_engine(
-                    db_url,
-                    echo=False,
-                    pool_pre_ping=True,
-                    pool_size=self.min_connections,
-                    max_overflow=self.max_connections - self.min_connections
-                )
-                
-                self._session_factory = sessionmaker(
-                    self._engine, 
-                    class_=AsyncSession, 
-                    expire_on_commit=False
-                )
-                
-                # Verifica se as tabelas necessárias existem
+                # Verificar/criar tabelas
                 await self._ensure_tables()
                 
-                logger.info("Conexão com o banco de dados estabelecida")
                 self._initialized = True
+                logger.info("DatabaseManager inicializado com sucesso")
                 
             except Exception as e:
-                logger.error(f"Erro ao conectar ao banco de dados: {str(e)}", exc_info=True)
-                raise
+                logger.error(f"Erro na inicialização do banco: {e}")
+                raise ConnectionError(f"Falha ao conectar: {e}")
     
-    async def close(self) -> None:
-        """
-        Fecha a conexão com o banco de dados.
-        """
-        if self._pool:
-            await self._pool.close()
-            self._pool = None
-            
-        if self._engine:
-            await self._engine.dispose()
-            self._engine = None
-            
-        self._initialized = False
-        logger.info("Conexão com o banco de dados fechada")
-    
-    async def get_connection(self) -> Connection:
-        """
-        Obtém uma conexão do pool.
+    async def _initialize_sqlalchemy(self) -> None:
+        """Inicializa usando SQLAlchemy."""
+        self._engine = create_async_engine(
+            self._database_url,
+            pool_size=self.max_connections,
+            max_overflow=0,
+            pool_pre_ping=True,
+            pool_recycle=3600,
+            echo=False,
+            poolclass=NullPool if self.max_connections == 0 else None
+        )
         
-        Returns:
-            Connection: Conexão do pool
-            
-        Raises:
-            ConnectionError: Se não for possível obter uma conexão
-        """
-        if not self._initialized:
-            await self.initialize()
-            
-        if not self._pool:
-            raise ConnectionError("Pool de conexões não inicializado")
-            
-        return await self._pool.acquire()
-    
-    async def release_connection(self, connection: Connection) -> None:
-        """
-        Libera uma conexão de volta para o pool.
+        self._session_maker = async_sessionmaker(
+            self._engine,
+            class_=AsyncSession,
+            expire_on_commit=False
+        )
         
-        Args:
-            connection: Conexão a ser liberada
-        """
-        if self._pool and connection:
-            await self._pool.release(connection)
+        logger.info("SQLAlchemy engine configurado")
     
-    async def get_session(self) -> AsyncSession:
-        """
-        Obtém uma sessão SQLAlchemy.
+    async def _initialize_asyncpg(self) -> None:
+        """Inicializa usando asyncpg."""
+        self._pool = await asyncpg.create_pool(
+            host=self.host,
+            port=self.port,
+            database=self.database,
+            user=self.user,
+            password=self.password,
+            min_size=self.min_connections,
+            max_size=self.max_connections,
+            ssl="require" if self.enable_ssl else "disable",
+            statement_timeout=self.statement_timeout / 1000,  # asyncpg usa segundos
+            query_timeout=self.query_timeout / 1000
+        )
         
-        Returns:
-            AsyncSession: Sessão SQLAlchemy
-            
-        Raises:
-            ConnectionError: Se não for possível obter uma sessão
-        """
-        if not self._initialized:
-            await self.initialize()
-            
-        if not self._session_factory:
-            raise ConnectionError("Session factory não inicializado")
-            
-        return self._session_factory()
+        logger.info("asyncpg pool configurado")
+    
+    async def _test_connection(self) -> None:
+        """Testa conectividade básica."""
+        try:
+            result = await self.execute_query("SELECT 1 as test")
+            if result and result[0]['test'] == 1:
+                logger.info("Teste de conectividade: OK")
+            else:
+                raise ConnectionError("Teste de conectividade falhou")
+        except Exception as e:
+            raise ConnectionError(f"Teste de conectividade falhou: {e}")
     
     async def _ensure_tables(self) -> None:
-        """
-        Garante que as tabelas necessárias existem no banco de dados.
-        
-        Cria as tabelas se não existirem.
-        """
-        async with self._pool.acquire() as conn:
-            # Verifica se o schema existe
-            schema_exists = await conn.fetchval(
-                "SELECT EXISTS(SELECT 1 FROM information_schema.schemata WHERE schema_name = $1)",
-                self.schema
-            )
-            
-            if not schema_exists:
-                await conn.execute(f"CREATE SCHEMA IF NOT EXISTS {self.schema}")
-            
-            # Cria a tabela de candles
-            await conn.execute(f"""
+        """Verifica/cria tabelas necessárias."""
+        tables_sql = [
+            # Tabela de candles
+            f"""
             CREATE TABLE IF NOT EXISTS {self.schema}.candles (
-                exchange TEXT NOT NULL,
-                trading_pair TEXT NOT NULL,
-                timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
-                timeframe TEXT NOT NULL,
-                open NUMERIC(30, 15) NOT NULL,
-                high NUMERIC(30, 15) NOT NULL,
-                low NUMERIC(30, 15) NOT NULL,
-                close NUMERIC(30, 15) NOT NULL,
-                volume NUMERIC(30, 15) NOT NULL,
-                trades INTEGER,
-                raw_data JSONB,
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (exchange, trading_pair, timeframe, timestamp)
-            )
-            """)
+                id BIGSERIAL PRIMARY KEY,
+                exchange VARCHAR(50) NOT NULL,
+                trading_pair VARCHAR(20) NOT NULL,
+                timeframe VARCHAR(10) NOT NULL,
+                timestamp TIMESTAMPTZ NOT NULL,
+                open_price DECIMAL(20,8) NOT NULL,
+                high_price DECIMAL(20,8) NOT NULL,
+                low_price DECIMAL(20,8) NOT NULL,
+                close_price DECIMAL(20,8) NOT NULL,
+                volume DECIMAL(20,8) NOT NULL,
+                close_timestamp TIMESTAMPTZ,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE(exchange, trading_pair, timeframe, timestamp)
+            );
+            """,
             
-            # Cria índices para a tabela de candles
-            await conn.execute(f"""
-            CREATE INDEX IF NOT EXISTS candles_exchange_trading_pair_timeframe_timestamp_idx
-            ON {self.schema}.candles (exchange, trading_pair, timeframe, timestamp)
-            """)
+            # Índices para candles
+            f"""
+            CREATE INDEX IF NOT EXISTS idx_candles_exchange_pair_timeframe 
+            ON {self.schema}.candles(exchange, trading_pair, timeframe);
+            """,
             
-            # Cria a tabela de orderbooks
-            await conn.execute(f"""
+            f"""
+            CREATE INDEX IF NOT EXISTS idx_candles_timestamp 
+            ON {self.schema}.candles(timestamp);
+            """,
+            
+            # Tabela de trades
+            f"""
+            CREATE TABLE IF NOT EXISTS {self.schema}.trades (
+                id BIGSERIAL PRIMARY KEY,
+                exchange VARCHAR(50) NOT NULL,
+                trading_pair VARCHAR(20) NOT NULL,
+                trade_id VARCHAR(100) NOT NULL,
+                price DECIMAL(20,8) NOT NULL,
+                amount DECIMAL(20,8) NOT NULL,
+                cost DECIMAL(20,8) NOT NULL,
+                side VARCHAR(10) NOT NULL,
+                timestamp TIMESTAMPTZ NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE(exchange, trading_pair, trade_id)
+            );
+            """,
+            
+            # Índices para trades
+            f"""
+            CREATE INDEX IF NOT EXISTS idx_trades_exchange_pair 
+            ON {self.schema}.trades(exchange, trading_pair);
+            """,
+            
+            f"""
+            CREATE INDEX IF NOT EXISTS idx_trades_timestamp 
+            ON {self.schema}.trades(timestamp);
+            """,
+            
+            # Tabela de orderbooks (snapshot)
+            f"""
             CREATE TABLE IF NOT EXISTS {self.schema}.orderbooks (
-                exchange TEXT NOT NULL,
-                trading_pair TEXT NOT NULL,
-                timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
+                id BIGSERIAL PRIMARY KEY,
+                exchange VARCHAR(50) NOT NULL,
+                trading_pair VARCHAR(20) NOT NULL,
+                timestamp TIMESTAMPTZ NOT NULL,
                 bids JSONB NOT NULL,
                 asks JSONB NOT NULL,
-                raw_data JSONB,
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (exchange, trading_pair, timestamp)
-            )
-            """)
+                spread_percentage DECIMAL(10,6),
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            );
+            """,
             
-            # Cria índices para a tabela de orderbooks
-            await conn.execute(f"""
-            CREATE INDEX IF NOT EXISTS orderbooks_exchange_trading_pair_timestamp_idx
-            ON {self.schema}.orderbooks (exchange, trading_pair, timestamp)
-            """)
+            # Índices para orderbooks
+            f"""
+            CREATE INDEX IF NOT EXISTS idx_orderbooks_exchange_pair 
+            ON {self.schema}.orderbooks(exchange, trading_pair);
+            """,
             
-            logger.info("Tabelas verificadas/criadas com sucesso")
-    
-    async def save_trade(self, trade: Trade) -> None:
-        """
-        Salva uma transação no banco de dados.
+            f"""
+            CREATE INDEX IF NOT EXISTS idx_orderbooks_timestamp 
+            ON {self.schema}.orderbooks(timestamp);
+            """
+        ]
         
-        Args:
-            trade: Entidade Trade a ser salva
-            
-        Raises:
-            Exception: Se ocorrer um erro ao salvar
-        """
-        if not self._initialized:
-            await self.initialize()
-            
-        async with self._pool.acquire() as conn:
+        for sql in tables_sql:
             try:
-                # Converte o raw_data para JSON se não for None
-                raw_data = None
-                if trade.raw_data:
-                    try:
-                        import json
-                        raw_data = json.dumps(trade.raw_data)
-                    except Exception as e:
-                        logger.warning(f"Erro ao converter raw_data para JSON: {str(e)}")
-                
-                # Insere o trade na tabela
-                await conn.execute(
-                    f"""
-                    INSERT INTO {self.schema}.trades
-                    (id, exchange, trading_pair, price, amount, cost, timestamp, side, taker, raw_data)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-                    ON CONFLICT (exchange, trading_pair, id) DO UPDATE
-                    SET price = $4, amount = $5, cost = $6, timestamp = $7, side = $8, taker = $9, raw_data = $10
-                    """,
-                    trade.id,
-                    trade.exchange,
-                    trade.trading_pair,
-                    float(trade.price),  # Converte Decimal para float para o banco
-                    float(trade.amount),
-                    float(trade.cost),
-                    trade.timestamp,
-                    trade.side.value,
-                    trade.taker,
-                    raw_data
-                )
-                
+                await self.execute_query(sql)
             except Exception as e:
-                logger.error(f"Erro ao salvar trade: {str(e)}", exc_info=True)
-                raise
-    
-    async def save_trades_batch(self, trades: List[Trade]) -> None:
-        """
-        Salva um lote de transações no banco de dados.
+                logger.warning(f"Erro ao criar/verificar tabela: {e}")
         
-        Args:
-            trades: Lista de entidades Trade a serem salvas
-            
-        Raises:
-            Exception: Se ocorrer um erro ao salvar
-        """
-        if not trades:
-            return
-            
-        if not self._initialized:
-            await self.initialize()
-            
-        async with self._pool.acquire() as conn:
-            try:
-                # Prepara os dados para inserção em batch
-                values = []
-                import json
-                
-                for trade in trades:
-                    # Converte o raw_data para JSON se não for None
-                    raw_data = None
-                    if trade.raw_data:
-                        try:
-                            raw_data = json.dumps(trade.raw_data)
-                        except Exception as e:
-                            logger.warning(f"Erro ao converter raw_data para JSON: {str(e)}")
-                    
-                    values.append((
-                        trade.id,
-                        trade.exchange,
-                        trade.trading_pair,
-                        float(trade.price),
-                        float(trade.amount),
-                        float(trade.cost),
-                        trade.timestamp,
-                        trade.side.value,
-                        trade.taker,
-                        raw_data
-                    ))
-                
-                # Inicia uma transação
-                async with conn.transaction():
-                    # Insere os trades em batch
-                    await conn.executemany(
-                        f"""
-                        INSERT INTO {self.schema}.trades
-                        (id, exchange, trading_pair, price, amount, cost, timestamp, side, taker, raw_data)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-                        ON CONFLICT (exchange, trading_pair, id) DO UPDATE
-                        SET price = $4, amount = $5, cost = $6, timestamp = $7, side = $8, taker = $9, raw_data = $10
-                        """,
-                        values
-                    )
-                
-            except Exception as e:
-                logger.error(f"Erro ao salvar lote de trades: {str(e)}", exc_info=True)
-                raise
+        logger.info("Tabelas verificadas/criadas")
     
-    async def get_trades(
+    async def execute_query(
         self,
-        exchange: str,
-        trading_pair: str,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
-        limit: Optional[int] = None
-    ) -> List[Trade]:
+        query: str,
+        params: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
         """
-        Recupera transações do banco de dados.
+        Executa uma query SQL.
         
         Args:
-            exchange: Nome da exchange
-            trading_pair: Par de negociação
-            start_time: Timestamp inicial (opcional)
-            end_time: Timestamp final (opcional)
-            limit: Número máximo de transações a retornar (opcional)
+            query: Query SQL
+            params: Parâmetros da query
             
         Returns:
-            List[Trade]: Lista de entidades Trade
-            
-        Raises:
-            Exception: Se ocorrer um erro ao recuperar os dados
+            List[Dict[str, Any]]: Resultados da query
         """
         if not self._initialized:
             await self.initialize()
+        
+        start_time = time.time()
+        
+        try:
+            if self._engine:
+                result = await self._execute_with_sqlalchemy(query, params)
+            elif self._pool:
+                result = await self._execute_with_asyncpg(query, params)
+            else:
+                raise DatabaseError("Nenhuma conexão disponível")
             
-        async with self._pool.acquire() as conn:
+            # Atualizar estatísticas
+            execution_time = time.time() - start_time
+            self._update_stats(True, execution_time)
+            
+            return result
+            
+        except Exception as e:
+            execution_time = time.time() - start_time
+            self._update_stats(False, execution_time)
+            logger.error(f"Erro na query: {e}")
+            raise QueryError(f"Erro na execução da query: {e}")
+    
+    async def _execute_with_sqlalchemy(
+        self,
+        query: str,
+        params: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
+        """Executa query usando SQLAlchemy."""
+        async with self._session_maker() as session:
             try:
-                # Constrói a query com os filtros
-                query = f"""
-                SELECT id, exchange, trading_pair, price, amount, cost, timestamp, side, taker, raw_data
-                FROM {self.schema}.trades
-                WHERE exchange = $1 AND trading_pair = $2
-                """
+                if params:
+                    result = await session.execute(sa.text(query), params)
+                else:
+                    result = await session.execute(sa.text(query))
                 
-                params = [exchange, trading_pair]
-                param_index = 3
-                
-                if start_time:
-                    query += f" AND timestamp >= ${param_index}"
-                    params.append(start_time)
-                    param_index += 1
-                
-                if end_time:
-                    query += f" AND timestamp <= ${param_index}"
-                    params.append(end_time)
-                    param_index += 1
-                
-                # Ordena por timestamp
-                query += " ORDER BY timestamp DESC"
-                
-                if limit:
-                    query += f" LIMIT ${param_index}"
-                    params.append(limit)
-                
-                # Executa a query
-                rows = await conn.fetch(query, *params)
-                
-                # Converte os resultados para entidades Trade
-                trades = []
-                for row in rows:
-                    side = TradeSide(row['side'])
+                # Converter resultado para lista de dicts
+                if result.returns_rows:
+                    rows = result.fetchall()
+                    return [dict(row._mapping) for row in rows]
+                else:
+                    await session.commit()
+                    return []
                     
-                    # Converte JSON para dict se não for None
-                    raw_data = None
-                    if row['raw_data']:
-                        import json
-                        raw_data = json.loads(row['raw_data'])
-                    
-                    trade = Trade(
-                        id=row['id'],
-                        exchange=row['exchange'],
-                        trading_pair=row['trading_pair'],
-                        price=Decimal(str(row['price'])),
-                        amount=Decimal(str(row['amount'])),
-                        cost=Decimal(str(row['cost'])),
-                        timestamp=row['timestamp'],
-                        side=side,
-                        taker=row['taker'],
-                        raw_data=raw_data
-                    )
-                    
-                    trades.append(trade)
-                
-                return trades
-                
             except Exception as e:
-                logger.error(f"Erro ao recuperar trades: {str(e)}", exc_info=True)
+                await session.rollback()
                 raise
+    
+    async def _execute_with_asyncpg(
+        self,
+        query: str,
+        params: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
+        """Executa query usando asyncpg."""
+        async with self._pool.acquire() as conn:
+            if params:
+                # Converter dict para lista ordenada para asyncpg
+                param_values = list(params.values()) if params else []
+                # Substituir named parameters por $1, $2, etc.
+                formatted_query = query
+                for i, key in enumerate(params.keys(), 1):
+                    formatted_query = formatted_query.replace(f":{key}", f"${i}")
+                
+                result = await conn.fetch(formatted_query, *param_values)
+            else:
+                result = await conn.fetch(query)
+            
+            # Converter Record para dict
+            return [dict(row) for row in result]
+    
+    @asynccontextmanager
+    async def transaction(self):
+        """Context manager para transações."""
+        if not self._initialized:
+            await self.initialize()
+        
+        if self._engine:
+            async with self._session_maker() as session:
+                async with session.begin():
+                    yield session
+        elif self._pool:
+            async with self._pool.acquire() as conn:
+                async with conn.transaction():
+                    yield conn
+        else:
+            raise DatabaseError("Nenhuma conexão disponível")
+    
+    async def execute_batch(
+        self,
+        query: str,
+        params_list: List[Dict[str, Any]]
+    ) -> None:
+        """
+        Executa query em batch para melhor performance.
+        
+        Args:
+            query: Query SQL
+            params_list: Lista de parâmetros para cada execução
+        """
+        if not params_list:
+            return
+        
+        start_time = time.time()
+        
+        try:
+            async with self.transaction() as conn:
+                if self._engine:
+                    # SQLAlchemy
+                    for params in params_list:
+                        await conn.execute(sa.text(query), params)
+                else:
+                    # asyncpg - usar executemany para melhor performance
+                    # Converter named parameters para positional
+                    first_params = params_list[0]
+                    formatted_query = query
+                    for i, key in enumerate(first_params.keys(), 1):
+                        formatted_query = formatted_query.replace(f":{key}", f"${i}")
+                    
+                    param_tuples = [
+                        tuple(params[key] for key in first_params.keys())
+                        for params in params_list
+                    ]
+                    
+                    await conn.executemany(formatted_query, param_tuples)
+            
+            execution_time = time.time() - start_time
+            self._update_stats(True, execution_time)
+            
+            logger.debug(f"Batch executado: {len(params_list)} registros em {execution_time:.2f}s")
+            
+        except Exception as e:
+            execution_time = time.time() - start_time
+            self._update_stats(False, execution_time)
+            logger.error(f"Erro no batch: {e}")
+            raise QueryError(f"Erro na execução do batch: {e}")
+    
+    # Métodos específicos para entidades de domínio
     
     async def save_candle(self, candle: Candle) -> None:
+        """Salva um candle no banco."""
+        query = f"""
+        INSERT INTO {self.schema}.candles 
+        (exchange, trading_pair, timeframe, timestamp, open_price, high_price, 
+         low_price, close_price, volume, close_timestamp)
+        VALUES 
+        (:exchange, :trading_pair, :timeframe, :timestamp, :open_price, :high_price,
+         :low_price, :close_price, :volume, :close_timestamp)
+        ON CONFLICT (exchange, trading_pair, timeframe, timestamp) 
+        DO UPDATE SET
+            open_price = EXCLUDED.open_price,
+            high_price = EXCLUDED.high_price,
+            low_price = EXCLUDED.low_price,
+            close_price = EXCLUDED.close_price,
+            volume = EXCLUDED.volume,
+            close_timestamp = EXCLUDED.close_timestamp
         """
-        Salva uma vela no banco de dados.
         
-        Args:
-            candle: Entidade Candle a ser salva
-            
-        Raises:
-            Exception: Se ocorrer um erro ao salvar
-        """
-        if not self._initialized:
-            await self.initialize()
-            
-        async with self._pool.acquire() as conn:
-            try:
-                # Converte o raw_data para JSON se não for None
-                raw_data = None
-                if candle.raw_data:
-                    try:
-                        import json
-                        raw_data = json.dumps(candle.raw_data)
-                    except Exception as e:
-                        logger.warning(f"Erro ao converter raw_data para JSON: {str(e)}")
-                
-                # Insere a vela na tabela
-                await conn.execute(
-                    f"""
-                    INSERT INTO {self.schema}.candles
-                    (exchange, trading_pair, timestamp, timeframe, open, high, low, close, volume, trades, raw_data)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-                    ON CONFLICT (exchange, trading_pair, timeframe, timestamp) DO UPDATE
-                    SET open = $5, high = $6, low = $7, close = $8, volume = $9, trades = $10, raw_data = $11
-                    """,
-                    candle.exchange,
-                    candle.trading_pair,
-                    candle.timestamp,
-                    candle.timeframe.value,
-                    float(candle.open),
-                    float(candle.high),
-                    float(candle.low),
-                    float(candle.close),
-                    float(candle.volume),
-                    candle.trades,
-                    raw_data
-                )
-                
-            except Exception as e:
-                logger.error(f"Erro ao salvar candle: {str(e)}", exc_info=True)
-                raise
+        params = {
+            'exchange': candle.exchange,
+            'trading_pair': candle.trading_pair,
+            'timeframe': candle.timeframe.value,
+            'timestamp': candle.timestamp,
+            'open_price': float(candle.open_price),
+            'high_price': float(candle.high_price),
+            'low_price': float(candle.low_price),
+            'close_price': float(candle.close_price),
+            'volume': float(candle.volume),
+            'close_timestamp': candle.close_timestamp
+        }
+        
+        await self.execute_query(query, params)
     
     async def save_candles_batch(self, candles: List[Candle]) -> None:
-        """
-        Salva um lote de velas no banco de dados.
-        
-        Args:
-            candles: Lista de entidades Candle a serem salvas
-            
-        Raises:
-            Exception: Se ocorrer um erro ao salvar
-        """
+        """Salva múltiplos candles em batch."""
         if not candles:
             return
-            
-        if not self._initialized:
-            await self.initialize()
-            
-        async with self._pool.acquire() as conn:
-            try:
-                # Prepara os dados para inserção em batch
-                values = []
-                import json
-                
-                for candle in candles:
-                    # Converte o raw_data para JSON se não for None
-                    raw_data = None
-                    if candle.raw_data:
-                        try:
-                            raw_data = json.dumps(candle.raw_data)
-                        except Exception as e:
-                            logger.warning(f"Erro ao converter raw_data para JSON: {str(e)}")
-                    
-                    values.append((
-                        candle.exchange,
-                        candle.trading_pair,
-                        candle.timestamp,
-                        candle.timeframe.value,
-                        float(candle.open),
-                        float(candle.high),
-                        float(candle.low),
-                        float(candle.close),
-                        float(candle.volume),
-                        candle.trades,
-                        raw_data
-                    ))
-                
-                # Inicia uma transação
-                async with conn.transaction():
-                    # Insere as velas em batch
-                    await conn.executemany(
-                        f"""
-                        INSERT INTO {self.schema}.candles
-                        (exchange, trading_pair, timestamp, timeframe, open, high, low, close, volume, trades, raw_data)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-                        ON CONFLICT (exchange, trading_pair, timeframe, timestamp) DO UPDATE
-                        SET open = $5, high = $6, low = $7, close = $8, volume = $9, trades = $10, raw_data = $11
-                        """,
-                        values
-                    )
-                
-            except Exception as e:
-                logger.error(f"Erro ao salvar lote de candles: {str(e)}", exc_info=True)
-                raise
-    
-    async def get_candles(
-        self,
-        exchange: str,
-        trading_pair: str,
-        timeframe: TimeFrame,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
-        limit: Optional[int] = None
-    ) -> List[Candle]:
-        """
-        Recupera velas do banco de dados.
         
-        Args:
-            exchange: Nome da exchange
-            trading_pair: Par de negociação
-            timeframe: Timeframe das velas
-            start_time: Timestamp inicial (opcional)
-            end_time: Timestamp final (opcional)
-            limit: Número máximo de velas a retornar (opcional)
-            
-        Returns:
-            List[Candle]: Lista de entidades Candle
-            
-        Raises:
-            Exception: Se ocorrer um erro ao recuperar os dados
+        query = f"""
+        INSERT INTO {self.schema}.candles 
+        (exchange, trading_pair, timeframe, timestamp, open_price, high_price, 
+         low_price, close_price, volume, close_timestamp)
+        VALUES 
+        (:exchange, :trading_pair, :timeframe, :timestamp, :open_price, :high_price,
+         :low_price, :close_price, :volume, :close_timestamp)
+        ON CONFLICT (exchange, trading_pair, timeframe, timestamp) 
+        DO UPDATE SET
+            open_price = EXCLUDED.open_price,
+            high_price = EXCLUDED.high_price,
+            low_price = EXCLUDED.low_price,
+            close_price = EXCLUDED.close_price,
+            volume = EXCLUDED.volume,
+            close_timestamp = EXCLUDED.close_timestamp
         """
-        if not self._initialized:
-            await self.initialize()
-            
-        async with self._pool.acquire() as conn:
-            try:
-                # Constrói a query com os filtros
-                query = f"""
-                SELECT exchange, trading_pair, timestamp, timeframe, open, high, low, close, volume, trades, raw_data
-                FROM {self.schema}.candles
-                WHERE exchange = $1 AND trading_pair = $2 AND timeframe = $3
-                """
-                
-                params = [exchange, trading_pair, timeframe.value]
-                param_index = 4
-                
-                if start_time:
-                    query += f" AND timestamp >= ${param_index}"
-                    params.append(start_time)
-                    param_index += 1
-                
-                if end_time:
-                    query += f" AND timestamp <= ${param_index}"
-                    params.append(end_time)
-                    param_index += 1
-                
-                # Ordena por timestamp
-                query += " ORDER BY timestamp ASC"
-                
-                if limit:
-                    query += f" LIMIT ${param_index}"
-                    params.append(limit)
-                
-                # Executa a query
-                rows = await conn.fetch(query, *params)
-                
-                # Converte os resultados para entidades Candle
-                candles = []
-                for row in rows:
-                    timeframe_value = TimeFrame(row['timeframe'])
-                    
-                    # Converte JSON para dict se não for None
-                    raw_data = None
-                    if row['raw_data']:
-                        import json
-                        raw_data = json.loads(row['raw_data'])
-                    
-                    candle = Candle(
-                        exchange=row['exchange'],
-                        trading_pair=row['trading_pair'],
-                        timestamp=row['timestamp'],
-                        timeframe=timeframe_value,
-                        open=Decimal(str(row['open'])),
-                        high=Decimal(str(row['high'])),
-                        low=Decimal(str(row['low'])),
-                        close=Decimal(str(row['close'])),
-                        volume=Decimal(str(row['volume'])),
-                        trades=row['trades'],
-                        raw_data=raw_data
-                    )
-                    
-                    candles.append(candle)
-                
-                return candles
-                
-            except Exception as e:
-                logger.error(f"Erro ao recuperar candles: {str(e)}", exc_info=True)
-                raise
+        
+        params_list = []
+        for candle in candles:
+            params_list.append({
+                'exchange': candle.exchange,
+                'trading_pair': candle.trading_pair,
+                'timeframe': candle.timeframe.value,
+                'timestamp': candle.timestamp,
+                'open_price': float(candle.open_price),
+                'high_price': float(candle.high_price),
+                'low_price': float(candle.low_price),
+                'close_price': float(candle.close_price),
+                'volume': float(candle.volume),
+                'close_timestamp': candle.close_timestamp
+            })
+        
+        await self.execute_batch(query, params_list)
+        logger.info(f"Salvos {len(candles)} candles em batch")
+    
+    async def save_trade(self, trade: Trade) -> None:
+        """Salva um trade no banco."""
+        query = f"""
+        INSERT INTO {self.schema}.trades 
+        (exchange, trading_pair, trade_id, price, amount, cost, side, timestamp)
+        VALUES 
+        (:exchange, :trading_pair, :trade_id, :price, :amount, :cost, :side, :timestamp)
+        ON CONFLICT (exchange, trading_pair, trade_id) 
+        DO NOTHING
+        """
+        
+        params = {
+            'exchange': trade.exchange,
+            'trading_pair': trade.trading_pair,
+            'trade_id': trade.trade_id,
+            'price': float(trade.price),
+            'amount': float(trade.amount),
+            'cost': float(trade.cost),
+            'side': trade.side.value,
+            'timestamp': trade.timestamp
+        }
+        
+        await self.execute_query(query, params)
+    
+    async def save_trades_batch(self, trades: List[Trade]) -> None:
+        """Salva múltiplos trades em batch."""
+        if not trades:
+            return
+        
+        query = f"""
+        INSERT INTO {self.schema}.trades 
+        (exchange, trading_pair, trade_id, price, amount, cost, side, timestamp)
+        VALUES 
+        (:exchange, :trading_pair, :trade_id, :price, :amount, :cost, :side, :timestamp)
+        ON CONFLICT (exchange, trading_pair, trade_id) 
+        DO NOTHING
+        """
+        
+        params_list = []
+        for trade in trades:
+            params_list.append({
+                'exchange': trade.exchange,
+                'trading_pair': trade.trading_pair,
+                'trade_id': trade.trade_id,
+                'price': float(trade.price),
+                'amount': float(trade.amount),
+                'cost': float(trade.cost),
+                'side': trade.side.value,
+                'timestamp': trade.timestamp
+            })
+        
+        await self.execute_batch(query, params_list)
+        logger.info(f"Salvos {len(trades)} trades em batch")
     
     async def save_orderbook(self, orderbook: OrderBook) -> None:
-        """
-        Salva um orderbook no banco de dados.
+        """Salva um orderbook no banco."""
+        import json
         
-        Args:
-            orderbook: Entidade OrderBook a ser salva
-            
-        Raises:
-            Exception: Se ocorrer um erro ao salvar
+        # Converter bids e asks para JSON
+        bids_json = [
+            {"price": float(level.price), "amount": float(level.amount)}
+            for level in orderbook.bids
+        ]
+        
+        asks_json = [
+            {"price": float(level.price), "amount": float(level.amount)}
+            for level in orderbook.asks
+        ]
+        
+        query = f"""
+        INSERT INTO {self.schema}.orderbooks 
+        (exchange, trading_pair, timestamp, bids, asks, spread_percentage)
+        VALUES 
+        (:exchange, :trading_pair, :timestamp, :bids, :asks, :spread_percentage)
         """
-        if not self._initialized:
-            await self.initialize()
-            
-        async with self._pool.acquire() as conn:
-            try:
-                import json
-                
-                # Converte os bids e asks para formato JSON
-                bids_json = json.dumps([
-                    {"price": float(bid.price), "amount": float(bid.amount), "count": bid.count}
-                    for bid in orderbook.bids
-                ])
-                
-                asks_json = json.dumps([
-                    {"price": float(ask.price), "amount": float(ask.amount), "count": ask.count}
-                    for ask in orderbook.asks
-                ])
-                
-                # Converte o raw_data para JSON se não for None
-                raw_data = None
-                if orderbook.raw_data:
-                    try:
-                        raw_data = json.dumps(orderbook.raw_data)
-                    except Exception as e:
-                        logger.warning(f"Erro ao converter raw_data para JSON: {str(e)}")
-                
-                # Insere o orderbook na tabela
-                await conn.execute(
-                    f"""
-                    INSERT INTO {self.schema}.orderbooks
-                    (exchange, trading_pair, timestamp, bids, asks, raw_data)
-                    VALUES ($1, $2, $3, $4, $5, $6)
-                    ON CONFLICT (exchange, trading_pair, timestamp) DO UPDATE
-                    SET bids = $4, asks = $5, raw_data = $6
-                    """,
-                    orderbook.exchange,
-                    orderbook.trading_pair,
-                    orderbook.timestamp,
-                    bids_json,
-                    asks_json,
-                    raw_data
-                )
-                
-            except Exception as e:
-                logger.error(f"Erro ao salvar orderbook: {str(e)}", exc_info=True)
-                raise
+        
+        params = {
+            'exchange': orderbook.exchange,
+            'trading_pair': orderbook.trading_pair,
+            'timestamp': orderbook.timestamp,
+            'bids': json.dumps(bids_json),
+            'asks': json.dumps(asks_json),
+            'spread_percentage': float(orderbook.spread_percentage) if hasattr(orderbook, 'spread_percentage') else None
+        }
+        
+        await self.execute_query(query, params)
     
-    async def get_orderbooks(
-        self,
-        exchange: str,
-        trading_pair: str,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
-        limit: Optional[int] = None,
-        interval_seconds: Optional[int] = None
-    ) -> List[OrderBook]:
-        """
-        Recupera orderbooks do banco de dados.
-        
-        Args:
-            exchange: Nome da exchange
-            trading_pair: Par de negociação
-            start_time: Timestamp inicial (opcional)
-            end_time: Timestamp final (opcional)
-            limit: Número máximo de orderbooks a retornar (opcional)
-            interval_seconds: Intervalo em segundos entre os orderbooks (opcional)
+    def _update_stats(self, success: bool, execution_time: float) -> None:
+        """Atualiza estatísticas de operações."""
+        with self._stats_lock:
+            self._stats['total_queries'] += 1
             
-        Returns:
-            List[OrderBook]: Lista de entidades OrderBook
+            if success:
+                self._stats['successful_queries'] += 1
+            else:
+                self._stats['failed_queries'] += 1
             
-        Raises:
-            Exception: Se ocorrer um erro ao recuperar os dados
-        """
-        if not self._initialized:
-            await self.initialize()
+            # Atualizar tempo médio de query
+            total_time = self._stats['avg_query_time'] * (self._stats['total_queries'] - 1)
+            self._stats['avg_query_time'] = (total_time + execution_time) / self._stats['total_queries']
             
-        async with self._pool.acquire() as conn:
-            try:
-                # Constrói a query base
-                if interval_seconds:
-                    # Com intervalo, usa time_bucket do TimescaleDB se disponível
-                    query = f"""
-                    SELECT DISTINCT ON (time_bucket('{interval_seconds} seconds', timestamp)) 
-                    exchange, trading_pair, timestamp, bids, asks, raw_data
-                    FROM {self.schema}.orderbooks
-                    WHERE exchange = $1 AND trading_pair = $2
-                    """
-                else:
-                    # Sem intervalo, recupera todos os registros
-                    query = f"""
-                    SELECT exchange, trading_pair, timestamp, bids, asks, raw_data
-                    FROM {self.schema}.orderbooks
-                    WHERE exchange = $1 AND trading_pair = $2
-                    """
-                
-                params = [exchange, trading_pair]
-                param_index = 3
-                
-                if start_time:
-                    query += f" AND timestamp >= ${param_index}"
-                    params.append(start_time)
-                    param_index += 1
-                
-                if end_time:
-                    query += f" AND timestamp <= ${param_index}"
-                    params.append(end_time)
-                    param_index += 1
-                
-                # Adiciona a ordenação
-                if interval_seconds:
-                    query += " ORDER BY time_bucket('{interval_seconds} seconds', timestamp), timestamp ASC"
-                else:
-                    query += " ORDER BY timestamp ASC"
-                
-                if limit:
-                    query += f" LIMIT ${param_index}"
-                    params.append(limit)
-                
-                # Executa a query
-                rows = await conn.fetch(query, *params)
-                
-                # Converte os resultados para entidades OrderBook
-                orderbooks = []
-                for row in rows:
-                    import json
-                    
-                    # Converte os bids e asks de JSON para objetos
-                    bids_data = json.loads(row['bids'])
-                    asks_data = json.loads(row['asks'])
-                    
-                    bids = [
-                        OrderBookLevel(
-                            price=Decimal(str(bid['price'])),
-                            amount=Decimal(str(bid['amount'])),
-                            count=bid.get('count')
-                        )
-                        for bid in bids_data
-                    ]
-                    
-                    asks = [
-                        OrderBookLevel(
-                            price=Decimal(str(ask['price'])),
-                            amount=Decimal(str(ask['amount'])),
-                            count=ask.get('count')
-                        )
-                        for ask in asks_data
-                    ]
-                    
-                    # Converte JSON para dict se não for None
-                    raw_data = None
-                    if row['raw_data']:
-                        raw_data = json.loads(row['raw_data'])
-                    
-                    orderbook = OrderBook(
-                        exchange=row['exchange'],
-                        trading_pair=row['trading_pair'],
-                        timestamp=row['timestamp'],
-                        bids=bids,
-                        asks=asks,
-                        raw_data=raw_data
-                    )
-                    
-                    orderbooks.append(orderbook)
-                
-                return orderbooks
-                
-            except Exception as e:
-                logger.error(f"Erro ao recuperar orderbooks: {str(e)}", exc_info=True)
-                raise
+            self._stats['last_query_time'] = datetime.utcnow()
     
-    async def get_latest_candle(
-        self,
-        exchange: str,
-        trading_pair: str,
-        timeframe: TimeFrame
-    ) -> Optional[Candle]:
-        """
-        Recupera a vela mais recente do banco de dados.
+    async def get_stats(self) -> Dict[str, Any]:
+        """Retorna estatísticas do banco."""
+        with self._stats_lock:
+            stats = self._stats.copy()
         
-        Args:
-            exchange: Nome da exchange
-            trading_pair: Par de negociação
-            timeframe: Timeframe da vela
-            
-        Returns:
-            Optional[Candle]: A vela mais recente ou None se não houver dados
-            
-        Raises:
-            Exception: Se ocorrer um erro ao recuperar os dados
-        """
-        candles = await self.get_candles(
-            exchange=exchange,
-            trading_pair=trading_pair,
-            timeframe=timeframe,
-            limit=1
-        )
+        # Adicionar estatísticas do pool
+        if self._pool:
+            stats['pool_size'] = self._pool.get_size()
+            stats['pool_available'] = self._pool.get_available_connections()
+            stats['pool_max_size'] = self._pool.get_max_size()
+        elif self._engine:
+            pool = self._engine.pool
+            stats['pool_size'] = pool.size()
+            stats['pool_checked_out'] = pool.checkedout()
+            stats['pool_checked_in'] = pool.checkedin()
         
-        return candles[0] if candles else None
+        return stats
     
-    async def get_latest_orderbook(
-        self,
-        exchange: str,
-        trading_pair: str
-    ) -> Optional[OrderBook]:
-        """
-        Recupera o orderbook mais recente do banco de dados.
-        
-        Args:
-            exchange: Nome da exchange
-            trading_pair: Par de negociação
+    async def health_check(self) -> Dict[str, Any]:
+        """Verifica saúde da conexão com banco."""
+        try:
+            start_time = time.time()
             
-        Returns:
-            Optional[OrderBook]: O orderbook mais recente ou None se não houver dados
+            # Teste básico de conectividade
+            result = await self.execute_query("SELECT NOW() as current_time, 1 as test")
             
-        Raises:
-            Exception: Se ocorrer um erro ao recuperar os dados
-        """
-        orderbooks = await self.get_orderbooks(
-            exchange=exchange,
-            trading_pair=trading_pair,
-            limit=1
-        )
+            query_time = (time.time() - start_time) * 1000  # ms
+            
+            # Obter estatísticas
+            stats = await self.get_stats()
+            
+            return {
+                'healthy': True,
+                'database': self.database,
+                'host': self.host,
+                'query_time_ms': query_time,
+                'current_time': result[0]['current_time'].isoformat() if result else None,
+                'stats': stats,
+                'initialized': self._initialized
+            }
+            
+        except Exception as e:
+            return {
+                'healthy': False,
+                'database': self.database,
+                'host': self.host,
+                'error': str(e),
+                'initialized': self._initialized
+            }
+    
+    async def shutdown(self) -> None:
+        """Fecha todas as conexões."""
+        if self._closed:
+            return
         
-        return orderbooks[0] if orderbooks else None
+        try:
+            if self._engine:
+                await self._engine.dispose()
+                logger.info("SQLAlchemy engine fechado")
+            
+            if self._pool:
+                await self._pool.close()
+                logger.info("asyncpg pool fechado")
+            
+            self._closed = True
+            self._initialized = False
+            
+            logger.info("DatabaseManager finalizado")
+            
+        except Exception as e:
+            logger.error(f"Erro ao fechar conexões: {e}")
+    
+    def __del__(self):
+        """Cleanup no destructor."""
+        if not self._closed and self._initialized:
+            # Não podemos usar await aqui, apenas log warning
+            logger.warning("DatabaseManager não foi fechado adequadamente")
+
+
+# Factory function para facilitar criação
+def create_database_manager(config: Dict[str, Any]) -> DatabaseManager:
+    """
+    Cria instância do DatabaseManager a partir de configuração.
+    
+    Args:
+        config: Configuração do banco
+        
+    Returns:
+        DatabaseManager: Instância configurada
+    """
+    return DatabaseManager(
+        host=config.get('host', 'localhost'),
+        port=config.get('port', 5432),
+        database=config.get('database', 'neural_crypto_bot'),
+        user=config.get('user', 'postgres'),
+        password=config.get('password', 'postgres'),
+        min_connections=config.get('min_connections', 5),
+        max_connections=config.get('max_connections', 20),
+        enable_ssl=config.get('enable_ssl', False),
+        schema=config.get('schema', 'public'),
+        statement_timeout=config.get('statement_timeout', 30000),
+        query_timeout=config.get('query_timeout', 30000)
+    )
