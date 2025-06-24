@@ -11,8 +11,8 @@ import random
 from datetime import datetime
 from typing import List, Optional, Tuple
 
-from src.execution_service.domain.entities.order import Order
-from src.execution_service.domain.value_objects.execution_parameters import (
+from execution_service.domain.entities.order import Order
+from execution_service.domain.value_objects.execution_parameters import (
     ExecutionParameters,
     IcebergParameters,
 )

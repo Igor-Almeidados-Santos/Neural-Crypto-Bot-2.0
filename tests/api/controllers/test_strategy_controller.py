@@ -12,8 +12,8 @@ import pytest
 from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
 
-from src.api.controllers import strategy_controller
-from src.api.dtos.strategy_dto import (
+from api.controllers import strategy_controller
+from api.dtos.strategy_dto import (
     BacktestRequest,
     BacktestResult,
     OrderRequest,
@@ -27,7 +27,7 @@ from src.api.dtos.strategy_dto import (
     StrategyUpdate,
     TimeFrame,
 )
-from src.strategy_engine.domain.entities.strategy import Strategy
+from strategy_engine.domain.entities.strategy import Strategy
 
 
 @pytest.fixture

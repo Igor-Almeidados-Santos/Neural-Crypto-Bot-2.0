@@ -10,18 +10,18 @@ import asyncio
 from typing import Dict, Any, Optional
 from pathlib import Path
 
-from src.common.infrastructure.config import (
+from common.infrastructure.config import (
     DatabaseConfig, ServiceConfig, load_config_from_env
 )
-from src.common.infrastructure.logging import setup_logger
-from src.analytics.domain.value_objects.performance_metric import (
+from common.infrastructure.logging import setup_logger
+from analytics.domain.value_objects.performance_metric import (
     PerformanceMetric, PerformanceMetricCollection, PerformanceAnalysis, MetricType
 )
-from src.analytics.application.services.performance_attribution_service import PerformanceAttributionService
-from src.analytics.application.services.analytics_service import AnalyticsService
-from src.analytics.application.use_cases.generate_analytics_report_use_case import GenerateAnalyticsReportUseCase
-from src.analytics.infrastructure.dashboard_publisher import DashboardPublisher
-from src.analytics.infrastructure.data_warehouse import DataWarehouse
+from analytics.application.services.performance_attribution_service import PerformanceAttributionService
+from analytics.application.services.analytics_service import AnalyticsService
+from analytics.application.use_cases.generate_analytics_report_use_case import GenerateAnalyticsReportUseCase
+from analytics.infrastructure.dashboard_publisher import DashboardPublisher
+from analytics.infrastructure.data_warehouse import DataWarehouse
 
 
 class AnalyticsModule:

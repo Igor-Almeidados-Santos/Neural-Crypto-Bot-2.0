@@ -9,7 +9,7 @@ import joblib
 from scipy.optimize import minimize
 from datetime import datetime, timedelta
 
-from src.model_training.domain.entities.training_config import TrainingConfig
+from model_training.domain.entities.training_config import TrainingConfig
 
 
 class HawkesProcess:

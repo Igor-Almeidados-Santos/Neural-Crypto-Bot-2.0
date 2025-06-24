@@ -2,7 +2,7 @@
 import pytest
 from datetime import datetime, timezone
 import uuid
-from src.common.domain.base_event import BaseEvent
+from common.domain.base_event import BaseEvent
 
 class TestEvent(BaseEvent):
     """A test event class."""

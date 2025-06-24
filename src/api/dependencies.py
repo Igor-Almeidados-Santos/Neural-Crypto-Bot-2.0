@@ -9,19 +9,19 @@ from typing import Annotated, AsyncGenerator
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
-from src.analytics.application.services.analytics_service import AnalyticsService
-from src.common.infrastructure.database.unit_of_work import UnitOfWork
-from src.common.utils.config import get_settings
-from src.execution_service.application.services.execution_optimization_service import (
+from analytics.application.services.analytics_service import AnalyticsService
+from common.infrastructure.database.unit_of_work import UnitOfWork
+from common.utils.config import get_settings
+from execution_service.application.services.execution_optimization_service import (
     ExecutionOptimizationService,
 )
-from src.execution_service.application.services.order_routing_service import OrderRoutingService
-from src.execution_service.application.use_cases.execute_order_use_case import ExecuteOrderUseCase
-from src.strategy_engine.application.services.backtest_service import BacktestService
-from src.strategy_engine.application.services.strategy_executor_service import StrategyExecutorService
-from src.strategy_engine.application.use_cases.backtest_strategy_use_case import BacktestStrategyUseCase
-from src.strategy_engine.application.use_cases.execute_strategy_use_case import ExecuteStrategyUseCase
-from src.strategy_engine.infrastructure.strategy_repository import StrategyRepository
+from execution_service.application.services.order_routing_service import OrderRoutingService
+from execution_service.application.use_cases.execute_order_use_case import ExecuteOrderUseCase
+from strategy_engine.application.services.backtest_service import BacktestService
+from strategy_engine.application.services.strategy_executor_service import StrategyExecutorService
+from strategy_engine.application.use_cases.backtest_strategy_use_case import BacktestStrategyUseCase
+from strategy_engine.application.use_cases.execute_strategy_use_case import ExecuteStrategyUseCase
+from strategy_engine.infrastructure.strategy_repository import StrategyRepository
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 

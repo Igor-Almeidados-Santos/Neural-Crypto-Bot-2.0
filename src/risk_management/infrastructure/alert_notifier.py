@@ -6,9 +6,9 @@ from typing import Dict, List, Optional, Union
 
 import httpx
 
-from src.risk_management.application.services.circuit_breaker_service import CircuitBreakerState
-from src.risk_management.domain.entities.risk_profile import RiskLevel
-from src.risk_management.domain.events.risk_threshold_breached_event import RiskThresholdBreachedEvent
+from risk_management.application.services.circuit_breaker_service import CircuitBreakerState
+from risk_management.domain.entities.risk_profile import RiskLevel
+from risk_management.domain.events.risk_threshold_breached_event import RiskThresholdBreachedEvent
 
 
 class AlertChannel(Enum):

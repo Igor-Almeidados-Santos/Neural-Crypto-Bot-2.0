@@ -1,6 +1,6 @@
 # tests/common/domain/test_base_value_object.py
 import pytest
-from src.common.domain.base_value_object import BaseValueObject
+from common.domain.base_value_object import BaseValueObject
 from dataclasses import dataclass
 
 @dataclass(frozen=True)

@@ -11,14 +11,14 @@ from uuid import UUID
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Path, Query, status
 from fastapi.responses import JSONResponse
 
-from src.api.dependencies import (
+from api.dependencies import (
     BacktestStrategyUCDep, 
     CurrentUser, 
     ExecuteOrderUCDep, 
     ExecuteStrategyUCDep, 
     StrategyRepositoryDep
 )
-from src.api.dtos.strategy_dto import (
+from api.dtos.strategy_dto import (
     BacktestRequest, 
     BacktestResult, 
     OrderRequest, 
@@ -30,8 +30,8 @@ from src.api.dtos.strategy_dto import (
     StrategyResponse, 
     StrategyUpdate
 )
-from src.common.infrastructure.cache.cache_manager import cached, get_cache
-from src.common.utils.validation import validate_trading_pair
+from common.infrastructure.cache.cache_manager import cached, get_cache
+from common.utils.validation import validate_trading_pair
 
 logger = logging.getLogger(__name__)
 

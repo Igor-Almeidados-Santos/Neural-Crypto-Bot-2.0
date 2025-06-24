@@ -13,7 +13,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 import redis
 from prometheus_client import Counter
 
-from src.common.utils.config import get_settings
+from common.utils.config import get_settings
 
 # Configure o logger
 logger = logging.getLogger(__name__)

@@ -2,7 +2,7 @@
 import pytest
 from typing import Any, Dict
 import asyncio
-from src.common.application.base_use_case import BaseUseCase
+from common.application.base_use_case import BaseUseCase
 
 class TestInput:
     """A test input class."""

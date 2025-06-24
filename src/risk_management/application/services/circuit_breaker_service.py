@@ -4,10 +4,10 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Dict, List, Optional, Set, Tuple
 
-from src.risk_management.domain.entities.risk_metric import MetricType
-from src.risk_management.domain.entities.risk_profile import RiskLevel, RiskProfile
-from src.risk_management.domain.events.risk_threshold_breached_event import RiskThresholdBreachedEvent
-from src.risk_management.infrastructure.alert_notifier import AlertNotifier
+from risk_management.domain.entities.risk_metric import MetricType
+from risk_management.domain.entities.risk_profile import RiskLevel, RiskProfile
+from risk_management.domain.events.risk_threshold_breached_event import RiskThresholdBreachedEvent
+from risk_management.infrastructure.alert_notifier import AlertNotifier
 
 
 class CircuitBreakerState(Enum):

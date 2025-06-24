@@ -10,7 +10,7 @@ from decimal import Decimal
 from enum import Enum, auto
 from typing import Optional, Dict, Any, Union
 
-from src.common.domain.value_objects.base_value_object import BaseValueObject
+from common.domain.value_objects.base_value_object import BaseValueObject
 
 
 class MetricType(Enum):

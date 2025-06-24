@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import joblib
 from statsmodels.tsa.stattools import adfuller
 
-from src.model_training.domain.entities.training_config import TrainingConfig
+from model_training.domain.entities.training_config import TrainingConfig
 
 
 class GARCHModel:

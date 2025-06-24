@@ -3,7 +3,7 @@ import pytest
 import uuid
 from decimal import Decimal
 from datetime import datetime, date
-from src.common.utils.validation import Validator, ValidationError
+from common.utils.validation import Validator, ValidationError
 
 class TestValidator:
     """Tests for the Validator class."""

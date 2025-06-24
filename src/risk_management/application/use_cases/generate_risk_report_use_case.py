@@ -3,13 +3,13 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Dict, List, Optional, Union
 
-from src.risk_management.application.services.circuit_breaker_service import CircuitBreakerService
-from src.risk_management.application.services.exposure_service import ExposureService
-from src.risk_management.application.services.portfolio_analytics_service import PortfolioAnalyticsService, PortfolioStats
-from src.risk_management.domain.entities.risk_metric import RiskMetric
-from src.risk_management.domain.entities.risk_profile import RiskProfile
-from src.risk_management.domain.events.risk_threshold_breached_event import RiskThresholdBreachedEvent
-from src.risk_management.infrastructure.risk_repository import RiskRepository
+from risk_management.application.services.circuit_breaker_service import CircuitBreakerService
+from risk_management.application.services.exposure_service import ExposureService
+from risk_management.application.services.portfolio_analytics_service import PortfolioAnalyticsService, PortfolioStats
+from risk_management.domain.entities.risk_metric import RiskMetric
+from risk_management.domain.entities.risk_profile import RiskProfile
+from risk_management.domain.events.risk_threshold_breached_event import RiskThresholdBreachedEvent
+from risk_management.infrastructure.risk_repository import RiskRepository
 
 
 class ReportTimeframe(Enum):

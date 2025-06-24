@@ -9,11 +9,11 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Set, Tuple, Callable, Awaitable
 
-from src.data_collection.domain.entities.candle import Candle, TimeFrame
-from src.data_collection.domain.entities.orderbook import OrderBook
-from src.data_collection.domain.entities.trade import Trade
-from src.data_collection.domain.entities.funding_rate import FundingRate
-from src.data_collection.domain.entities.liquidation import Liquidation
+from data_collection.domain.entities.candle import Candle, TimeFrame
+from data_collection.domain.entities.orderbook import OrderBook
+from data_collection.domain.entities.trade import Trade
+from data_collection.domain.entities.funding_rate import FundingRate
+from data_collection.domain.entities.liquidation import Liquidation
 
 
 class ExchangeAdapterInterface(ABC):

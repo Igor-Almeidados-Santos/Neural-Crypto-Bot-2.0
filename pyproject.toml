@@ -1,191 +1,77 @@
 [tool.poetry]
-name = "Neural-Crypto-Bot"
-version = "1.0.0"
-description = "Advanced cryptocurrency trading bot with ML capabilities"
-authors = ["Igor Almeida Dos Santos <igor.almeidasantos2020@gmail.com>"]
+name = "Oasis Trading System API"
+version = "2.0.0"
+description = "A robust, functional, and profitable cryptocurrency trading bot, refactored by Oasis."
+authors = ["Igor Almeida dos Santos <igor.almeidadosantos@icloud.com>", "Oasis <contact@oasis.dev>"]
 readme = "README.md"
-license = "MIT"
 packages = [{include = "src"}]
 
 [tool.poetry.dependencies]
-python = ">=3.11,<3.12"
+python = "^3.11"
 
-# APIs e frameworks
-fastapi = "^0.109.2"
-uvicorn = {extras = ["standard"], version = "^0.27.0.post1"}
-starlette = "^0.36.3"
-graphql-core = "^3.2.4"
-strawberry-graphql = "^0.219.1"
-pydantic = "^2.6.0"
-pydantic-settings = "^2.1.0"
+# Core Frameworks & API
+fastapi = "^0.111.0"
+uvicorn = {extras = ["standard"], version = "^0.29.0"}
+pydantic = {extras = ["email"], version = "^2.7.1"}
+pydantic-settings = "^2.2.1"
+httpx = "^0.27.0"
 
-# Comunicação assíncrona e concorrência
-asyncio = "^3.4.3"
-httpx = "^0.26.0"
-grpcio = "^1.60.1"
-protobuf = "^4.25.2"
-websockets = "^12.0"
+# Data & Performance
+numpy = "^1.26.4"
+pandas = "^2.2.2"
+scipy = "^1.13.1"
+statsmodels = "^0.14.2"
 
-# Processamento de dados e análise numérica
-numpy = "^1.26.3"
-scipy = "^1.12.0"
-pandas = ">=1.1.5,<2.0.0" 
-polars = "^0.20.6"
-numba = "^0.58.1"
-pyarrow = "^14.0.2"
-
-# Machine Learning
-scikit-learn = "^1.4.0"
-pytorch-lightning = "^2.2.0.post0"
-torch = "^2.2.0"
-transformers = "^4.37.2"
-xgboost = "^2.0.3"
-optuna = "^3.5.0"
-mlflow = "^2.10.0"
-ray = {extras = ["tune"], version = "^2.9.0"}
-tensorboard = "^2.15.1"
-
-# Processamento de séries temporais
-statsmodels = "^0.14.1"
-prophet = "^1.1.5"
-tslearn = "^0.6.3"
-
-# Infraestrutura e armazenamento de dados
-sqlalchemy = "^2.0.25"
-alembic = "^1.13.1"
+# Database & Cache
+sqlalchemy = {extras = ["asyncio"], version = "^2.0.30"}
+asyncpg = "^0.29.0"
+redis = {version = "^5.0.4", extras = ["hiredis"]}
 psycopg2-binary = "^2.9.9"
-redis = "^5.0.1"
-pymongo = "^4.6.1"
-arcticdb = "^1.4.0"
+
+# Crypto Integration
+ccxt = "^4.3.43"
+
+# Machine Learning & MLOps
+scikit-learn = "^1.5.0"
+tensorflow = {version = "^2.16.1", optional = true} # Opcional para performance
+torch = {version = "^2.3.1", optional = true}      # Opcional para performance
+optuna = {version = "^3.6.1", optional = true}     # Opcional para hyperparameter tuning
+mlflow = {version = "^2.14.1", optional = true}    # Opcional para experiment tracking
+
+# Messaging & Events
 kafka-python = "^2.0.2"
-confluent-kafka = "^2.3.0"
 
-# Trading e Exchange APIs
-ccxt = "^4.1.83"
+# Logging & Observability
+loguru = "^0.7.2"
+pyyaml = "^6.0.1"
 
-# Segurança e autenticação
-pyjwt = "^2.8.0"
-passlib = "^1.7.4"
-python-jose = {extras = ["cryptography"], version = "^3.3.0"}
-cryptography = "^41.0.6"
-
-# Observabilidade e logging
-opentelemetry-api = "^1.21.0"
-opentelemetry-sdk = "^1.21.0"
-opentelemetry-instrumentation = "^0.54b1"
-opentelemetry-instrumentation-fastapi = "^0.54b1"
-prometheus-client = "^0.19.0"
-structlog = "^23.2.0"
-python-json-logger = "^2.0.7"
-
-# Utilitários
-python-dotenv = "^1.0.1"
-tenacity = "^8.2.3"
-pytz = "^2024.1"
-click = "^8.1.7"
-tqdm = "^4.66.1"
-
-# Visualização
-matplotlib = "^3.8.2"
-seaborn = "^0.13.1"
-plotly = "^5.18.0"
-bokeh = "^3.3.2"
+[tool.poetry.extras]
+tensorflow = ["tensorflow"]
+torch = ["torch"]
+ml = ["tensorflow", "torch", "optuna", "mlflow"]
 
 [tool.poetry.group.dev.dependencies]
-# Testes
-pytest = "^8.0.0"
-pytest-asyncio = "^0.23.3"
-pytest-cov = "^4.1.0"
-hypothesis = "^6.92.6"
-
-# Desenvolvimento
-black = "^24.1.1"
-flake8 = "^7.0.0"
-mypy = "^1.8.0"
-isort = "^5.13.2"
-pre-commit = "^3.6.0"
-ruff = "^0.2.0"
+pytest = "^8.2.1"
+pytest-asyncio = "^0.23.6"
+pytest-cov = "^5.0.0"
+ruff = "^0.4.4"
+mypy = "^1.10.0"
+pre-commit = "^3.7.0"
+mkdocs-material = "^9.5.25"
+mkdocs-macros-plugin = "^1.0.5"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
-[tool.black]
-line-length = 100
-target-version = ["py311"]
-include = '\.pyi?$'
+[tool.ruff]
+line-length = 119
+target-version = "py311"
 
-[tool.isort]
-profile = "black"
-line_length = 100
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "C", "B", "ASYNC"]
 
 [tool.mypy]
 python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-check_untyped_defs = true
-disallow_untyped_decorators = true
-no_implicit_optional = true
-strict_optional = true
-
-[tool.pytest.ini_options]
-minversion = "7.0"
-addopts = "--cov=src --cov-report=term-missing --cov-report=xml:coverage.xml"
-testpaths = ["tests"]
-python_files = "test_*.py"
-python_classes = "Test*"
-python_functions = "test_*"
-markers = [
-    "unit: Unit tests",
-    "integration: Integration tests",
-    "system: System tests",
-]
-
-[tool.ruff]
-line-length = 100
-target-version = "py311"
-select = ["E", "F", "B", "I"]
-ignore = []
-
-[tool.poetry.group.docs.dependencies]
-# Core MkDocs
-mkdocs = "^1.5.3"
-mkdocs-material = "^9.4.8"
-
-# Essential Plugins
-mkdocs-git-revision-date-localized-plugin = "^1.2.1"
-mkdocs-git-committers-plugin-2 = "^2.2.2"
-mkdocs-minify-plugin = "^0.7.1"
-mkdocs-redirects = "^1.2.1"
-mkdocs-macros-plugin = "^1.0.5"
-mkdocs-awesome-pages-plugin = "^2.9.2"
-mkdocs-glightbox = "^0.3.4"
-mkdocs-exclude = "^1.0.2"
-
-# API Documentation
-mkdocs-swagger-ui-tag = "^0.6.6"
-mkdocstrings = {extras = ["python"], version = "^0.24.0"}
-mkdocs-gen-files = "^0.5.0"
-mkdocs-literate-nav = "^0.6.1"
-mkdocs-section-index = "^0.3.8"
-
-# Versioning and Publishing
-mike = "^2.0.0"
-ghp-import = "^2.1.0"
-
-# Enhancement Libraries
-pymdown-extensions = "^10.4"
-markdown-include = "^0.8.1"
-pillow = "^10.1.0"
-cairosvg = "^2.7.1"
-
-# Quality and Validation
-markdownlint-cli2 = "^0.11.0"
-markdown-link-check = "^3.11.2"
-htmlproofer = "^4.4.3"
-
-# Development Tools
-livereload = "^2.6.3"
-watchdog = "^2.3.0"

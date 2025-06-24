@@ -1,10 +1,10 @@
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Union
 
-from src.risk_management.application.services.circuit_breaker_service import CircuitBreakerService
-from src.risk_management.application.services.exposure_service import ExposureService
-from src.risk_management.domain.entities.risk_profile import RiskProfile
-from src.risk_management.infrastructure.risk_repository import RiskRepository
+from risk_management.application.services.circuit_breaker_service import CircuitBreakerService
+from risk_management.application.services.exposure_service import ExposureService
+from risk_management.domain.entities.risk_profile import RiskProfile
+from risk_management.infrastructure.risk_repository import RiskRepository
 
 
 @dataclass

@@ -1,32 +1,62 @@
 #!/bin/bash
-# install.sh
 
-set -e  # Encerra o script se algum comando falhar
+# Aborta o script imediatamente se um comando falhar.
+set -e
 
-echo "=== Iniciando instalação do Neural Crypto Bot ==="
+# Função para checar se um comando existe
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
 
-# Executa scripts na ordem correta
-echo "Passo 1: Verificando pré-requisitos..."
-bash ./scripts/check_prerequisites.sh
+# Função de log
+log_info() {
+    echo "INFO: $1"
+}
 
-echo "Passo 2: Configurando Poetry..."
-bash ./scripts/setup_poetry.sh
+log_error() {
+    echo "ERROR: $1" >&2
+    exit 1
+}
 
-echo "Passo 3: Configurando Docker..."
-bash ./scripts/setup_docker.sh
+# --- Verificação de Pré-requisitos ---
+log_info "Verificando pré-requisitos essenciais..."
 
-echo "Passo 4: Configurando arquivos de ambiente..."
-bash ./scripts/setup_configs.sh
+if ! command_exists git; then
+    log_error "Git não está instalado. Por favor, instale o Git para continuar."
+fi
 
-echo "Passo 5: Configurando scripts utilitários..."
-bash ./scripts/setup_scripts.sh
+if ! command_exists docker; then
+    log_error "Docker não está instalado. Por favor, instale o Docker para continuar."
+fi
+if ! docker-compose --version >/dev/null 2>&1; then
+    log_error "Docker Compose não está instalado ou não está no PATH. Por favor, instale-o."
+fi
 
-echo "Passo 6: Configurando arquivos de domínio base..."
-bash ./scripts/setup_base_domain.sh
+if ! command_exists poetry; then
+    log_error "Poetry não está instalado. Instale-o com: 'curl -sSL https://install.python-poetry.org | python3 -'"
+fi
 
-# Torna os scripts executáveis
-chmod +x scripts/*.sh
+log_info "✅ Todos os pré-requisitos foram encontrados."
 
-echo "=== Instalação concluída com sucesso! ==="
-echo "Para instalar as dependências, execute: ./scripts/setup_poetry.sh"
-echo "Para iniciar o ambiente Docker, execute: ./scripts/start_docker.sh"
+# --- Instalação ---
+log_info "Iniciando a instalação via Makefile..."
+if ! make install; then
+    log_error "A instalação das dependências via 'make install' falhou."
+fi
+
+# --- Configuração do Ambiente ---
+if [ ! -f .env ]; then
+    log_info "Arquivo .env não encontrado. Copiando de .env.example..."
+    if [ -f .env.example ]; then
+        cp .env.example .env
+        log_info "✅ Arquivo .env criado. Por favor, edite-o com suas chaves de API e configurações."
+    else
+        log_error "Arquivo .env.example não encontrado. Não foi possível criar o arquivo .env."
+    fi
+fi
+
+echo ""
+log_info "🎉 Instalação concluída com sucesso!"
+log_info "Para iniciar os serviços em background, use: make docker-up"
+log_info "Para iniciar a API em modo de desenvolvimento, use: make run-api"
+log_info "Para ver todos os comandos disponíveis, use: make help"

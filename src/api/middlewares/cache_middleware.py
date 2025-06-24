@@ -17,8 +17,8 @@ from fastapi.responses import JSONResponse, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
-from src.common.infrastructure.cache.cache_manager import get_cache
-from src.common.utils.config import get_settings
+from common.infrastructure.cache.cache_manager import get_cache
+from common.utils.config import get_settings
 
 # Configure o logger
 logger = logging.getLogger(__name__)

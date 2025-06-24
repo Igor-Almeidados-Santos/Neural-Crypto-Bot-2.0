@@ -7,22 +7,22 @@ import logging
 from typing import Dict, List, Optional, Set, Tuple, Union, Any
 from datetime import datetime
 
-from src.feature_engineering.domain.entities.feature import (
+from feature_engineering.domain.entities.feature import (
     Feature, FeatureType, FeatureCategory, FeatureTimeframe
 )
-from src.feature_engineering.domain.entities.feature_set import (
+from feature_engineering.domain.entities.feature_set import (
     FeatureSet, FeatureSetMetadata, FeatureSetType, FeatureSetStatus
 )
-from src.feature_engineering.application.features.technical_indicators import (
+from feature_engineering.application.features.technical_indicators import (
     MovingAverageCalculator, OscillatorCalculator, VolatilityCalculator,
     VolumeCalculator, TrendCalculator
 )
-from src.feature_engineering.application.features.statistical_features import (
+from feature_engineering.application.features.statistical_features import (
     DescriptiveStatisticsCalculator, TimeSeriesStatisticsCalculator,
     DistributionalStatisticsCalculator, MarketRegimeCalculator, AnomalyDetectionCalculator
 )
-from src.feature_engineering.application.features.orderbook_features import OrderbookFeatureCalculator
-from src.feature_engineering.application.features.sentiment_features import (
+from feature_engineering.application.features.orderbook_features import OrderbookFeatureCalculator
+from feature_engineering.application.features.sentiment_features import (
     NewsSentimentCalculator, SocialMediaSentimentCalculator, 
     OnChainSentimentCalculator, CombinedSentimentCalculator
 )

@@ -2,13 +2,13 @@
 import pytest
 from datetime import datetime, timezone
 import uuid
-from src.common.domain.base_entity import BaseEntity
+from common.domain.base_entity import BaseEntity
 
 # tests/common/domain/test_base_event.py
 import pytest
 from datetime import datetime, timezone
 import uuid
-from src.common.domain.base_event import BaseEvent
+from common.domain.base_event import BaseEvent
 
 class TestEntity(BaseEntity):
     """A test entity class."""

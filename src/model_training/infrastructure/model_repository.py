@@ -11,12 +11,12 @@ import torch
 import pickle
 from datetime import datetime
 
-from src.model_training.domain.entities.model import Model, ModelType
-from src.model_training.models.time_series.lstm_model import LSTMTimeSeriesForecaster
-from src.model_training.models.time_series.gru_model import GRUTimeSeriesForecaster
-from src.model_training.models.time_series.transformer_model import TransformerTimeSeriesForecaster
-from src.model_training.models.statistical.garch_model import GARCHModel
-from src.model_training.models.statistical.hawkes_process import HawkesProcess
+from model_training.domain.entities.model import Model, ModelType
+from model_training.models.time_series.lstm_model import LSTMTimeSeriesForecaster
+from model_training.models.time_series.gru_model import GRUTimeSeriesForecaster
+from model_training.models.time_series.transformer_model import TransformerTimeSeriesForecaster
+from model_training.models.statistical.garch_model import GARCHModel
+from model_training.models.statistical.hawkes_process import HawkesProcess
 
 
 logger = logging.getLogger(__name__)

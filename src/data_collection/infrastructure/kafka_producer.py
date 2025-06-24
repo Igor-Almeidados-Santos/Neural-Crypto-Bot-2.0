@@ -41,9 +41,9 @@ except ImportError:
     import json as json_lib
     HAS_ORJSON = False
 
-from src.data_collection.domain.entities.candle import Candle, TimeFrame
-from src.data_collection.domain.entities.orderbook import OrderBook, OrderBookLevel
-from src.data_collection.domain.entities.trade import Trade, TradeSide
+from data_collection.domain.entities.candle import Candle, TimeFrame
+from data_collection.domain.entities.orderbook import OrderBook, OrderBookLevel
+from data_collection.domain.entities.trade import Trade, TradeSide
 
 
 logger = logging.getLogger(__name__)

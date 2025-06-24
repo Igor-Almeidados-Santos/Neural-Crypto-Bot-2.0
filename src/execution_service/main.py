@@ -17,24 +17,24 @@ from fastapi import Depends, FastAPI, HTTPException, Path, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from src.execution_service.application.services.execution_optimization_service import (
+from execution_service.application.services.execution_optimization_service import (
     ExecutionOptimizationService,
 )
-from src.execution_service.application.services.order_routing_service import (
+from execution_service.application.services.order_routing_service import (
     OrderRoutingService,
 )
-from src.execution_service.application.use_cases.execute_order_use_case import (
+from execution_service.application.use_cases.execute_order_use_case import (
     ExecuteOrderUseCase,
 )
-from src.execution_service.domain.entities.order import Order
-from src.execution_service.domain.value_objects.execution_parameters import (
+from execution_service.domain.entities.order import Order
+from execution_service.domain.value_objects.execution_parameters import (
     create_execution_parameters,
 )
-from src.execution_service.infrastructure.exchange_client import ExchangeClient
-from src.execution_service.infrastructure.execution_event_publisher import (
+from execution_service.infrastructure.exchange_client import ExchangeClient
+from execution_service.infrastructure.execution_event_publisher import (
     ExecutionEventPublisher,
 )
-from src.execution_service.infrastructure.order_repository import OrderRepository
+from execution_service.infrastructure.order_repository import OrderRepository
 
 # Configurar logging
 logging.basicConfig(

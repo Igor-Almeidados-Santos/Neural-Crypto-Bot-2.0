@@ -3,8 +3,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Optional, Set, Tuple, Union
 
-from src.risk_management.domain.entities.risk_metric import MetricType, RiskMetric
-from src.risk_management.domain.entities.risk_profile import RiskProfile
+from risk_management.domain.entities.risk_metric import MetricType, RiskMetric
+from risk_management.domain.entities.risk_profile import RiskProfile
 
 
 @dataclass

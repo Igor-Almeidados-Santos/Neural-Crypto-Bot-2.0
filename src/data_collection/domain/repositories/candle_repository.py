@@ -12,9 +12,9 @@ from typing import Dict, List, Optional, Any, Set, Tuple, Union
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from src.data_collection.domain.entities.candle import Candle, TimeFrame
-from src.common.infrastructure.database.base_repository import BaseRepository
-from src.common.domain.base_entity import BaseEntity
+from data_collection.domain.entities.candle import Candle, TimeFrame
+from common.infrastructure.database.base_repository import BaseRepository
+from common.domain.base_entity import BaseEntity
 
 logger = logging.getLogger(__name__)
 

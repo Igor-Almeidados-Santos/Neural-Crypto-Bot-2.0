@@ -4,7 +4,7 @@ import logging
 from typing import Any, Dict
 import asyncio
 from datetime import datetime, timezone
-from src.common.application.base_service import BaseService
+from common.application.base_service import BaseService
 
 class TestService(BaseService):
     """A test service implementation."""

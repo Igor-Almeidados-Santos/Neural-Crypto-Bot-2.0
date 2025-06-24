@@ -49,26 +49,26 @@ except ImportError:
     HAS_ORJSON = False
 
 # Imports do projeto
-from src.data_collection.adapters.binance_adapter import BinanceAdapter
-from src.data_collection.adapters.coinbase_adapter import CoinbaseAdapter
-from src.data_collection.adapters.kraken_adapter import KrakenAdapter
-from src.data_collection.adapters.bybit_adapter import BybitAdapter
-from src.data_collection.adapters.exchange_adapter_interface import ExchangeAdapterInterface
+from data_collection.adapters.binance_adapter import BinanceAdapter
+from data_collection.adapters.coinbase_adapter import CoinbaseAdapter
+from data_collection.adapters.kraken_adapter import KrakenAdapter
+from data_collection.adapters.bybit_adapter import BybitAdapter
+from data_collection.adapters.exchange_adapter_interface import ExchangeAdapterInterface
 
-from src.data_collection.application.services.data_normalization_service import DataNormalizationService
-from src.data_collection.application.services.data_validation_service import DataValidationService
+from data_collection.application.services.data_normalization_service import DataNormalizationService
+from data_collection.application.services.data_validation_service import DataValidationService
 
-from src.data_collection.domain.entities.candle import Candle, TimeFrame
-from src.data_collection.domain.entities.orderbook import OrderBook
-from src.data_collection.domain.entities.trade import Trade
-from src.data_collection.domain.entities.funding_rate import FundingRate
-from src.data_collection.domain.entities.liquidation import Liquidation
+from data_collection.domain.entities.candle import Candle, TimeFrame
+from data_collection.domain.entities.orderbook import OrderBook
+from data_collection.domain.entities.trade import Trade
+from data_collection.domain.entities.funding_rate import FundingRate
+from data_collection.domain.entities.liquidation import Liquidation
 
-from src.data_collection.infrastructure.database import DatabaseManager
-from src.data_collection.infrastructure.kafka_producer import KafkaProducer
-from src.data_collection.infrastructure.crypto import CryptoService
-from src.data_collection.infrastructure.compression import CompressionService
-from src.data_collection.infrastructure.load_balancer import (
+from data_collection.infrastructure.database import DatabaseManager
+from data_collection.infrastructure.kafka_producer import KafkaProducer
+from data_collection.infrastructure.crypto import CryptoService
+from data_collection.infrastructure.compression import CompressionService
+from data_collection.infrastructure.load_balancer import (
     ExchangeLoadBalancer, 
     BalancingStrategy, 
     LoadBalancerConfig,

@@ -13,7 +13,7 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 
-from src.model_training.domain.entities.training_config import TrainingConfig
+from model_training.domain.entities.training_config import TrainingConfig
 
 
 class GRUModel(nn.Module):

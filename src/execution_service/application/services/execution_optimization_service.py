@@ -9,14 +9,14 @@ import math
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
-from src.execution_service.domain.entities.order import Order
-from src.execution_service.domain.value_objects.execution_parameters import (
+from execution_service.domain.entities.order import Order
+from execution_service.domain.value_objects.execution_parameters import (
     ExecutionParameters,
     IcebergParameters,
     SmartRoutingParameters,
     TwapParameters,
 )
-from src.execution_service.infrastructure.exchange_client import ExchangeClient
+from execution_service.infrastructure.exchange_client import ExchangeClient
 
 logger = logging.getLogger(__name__)
 

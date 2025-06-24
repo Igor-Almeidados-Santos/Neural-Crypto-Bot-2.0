@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 
-from src.analytics.domain.value_objects.performance_metric import (
+from analytics.domain.value_objects.performance_metric import (
     PerformanceMetric, PerformanceMetricCollection, PerformanceAnalysis
 )
 

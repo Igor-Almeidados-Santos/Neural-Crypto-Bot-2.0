@@ -11,10 +11,10 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 
-from src.risk_management.application.use_cases.generate_risk_report_use_case import RiskReport
-from src.risk_management.domain.entities.risk_metric import MetricType, RiskMetric, TimeFrame
-from src.risk_management.domain.entities.risk_profile import RiskLevel, RiskProfile
-from src.risk_management.domain.events.risk_threshold_breached_event import RiskThresholdBreachedEvent
+from risk_management.application.use_cases.generate_risk_report_use_case import RiskReport
+from risk_management.domain.entities.risk_metric import MetricType, RiskMetric, TimeFrame
+from risk_management.domain.entities.risk_profile import RiskLevel, RiskProfile
+from risk_management.domain.events.risk_threshold_breached_event import RiskThresholdBreachedEvent
 
 
 Base = declarative_base()

@@ -16,7 +16,7 @@ import statistics
 import random
 from collections import defaultdict, deque
 
-from src.data_collection.adapters.exchange_adapter_interface import ExchangeAdapterInterface
+from data_collection.adapters.exchange_adapter_interface import ExchangeAdapterInterface
 
 logger = logging.getLogger(__name__)
 
@@ -681,3 +681,287 @@ def create_exchange_load_balancer(
         health_check_interval=health_check_interval,
         enable_circuit_breaker=True
     )
+
+@dataclass
+class LoadBalancerConfig:
+    """
+    Configuração para o balanceador de carga.
+    
+    Contém todas as configurações necessárias para configurar
+    o comportamento do balanceador de carga.
+    """
+    strategy: BalancingStrategy = BalancingStrategy.ADAPTIVE
+    health_check_interval: int = 30
+    enable_circuit_breaker: bool = True
+    
+    # Circuit breaker configuration
+    circuit_breaker_threshold: int = 5
+    circuit_breaker_recovery_timeout: int = 60
+    
+    # Instance configuration
+    max_connections_per_instance: int = 100
+    max_response_time: float = 5.0
+    max_error_rate: float = 0.1
+    max_consecutive_failures: int = 3
+    
+    # Health check configuration
+    health_check_timeout: float = 10.0
+    health_check_retry_attempts: int = 3
+    
+    # Load balancing weights and priorities
+    default_weight: float = 1.0
+    default_priority: int = 1
+    
+    # Rate limiting
+    enable_rate_limiting: bool = True
+    rate_limit_buffer: float = 0.8  # Use 80% of rate limit
+    
+    # Monitoring
+    enable_metrics: bool = True
+    metrics_retention_count: int = 1000
+    
+    # Advanced options
+    enable_sticky_sessions: bool = False
+    session_timeout: int = 3600  # 1 hour
+    enable_weighted_random: bool = False
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Converte configuração para dicionário."""
+        return {
+            'strategy': self.strategy.value if isinstance(self.strategy, BalancingStrategy) else self.strategy,
+            'health_check_interval': self.health_check_interval,
+            'enable_circuit_breaker': self.enable_circuit_breaker,
+            'circuit_breaker_threshold': self.circuit_breaker_threshold,
+            'circuit_breaker_recovery_timeout': self.circuit_breaker_recovery_timeout,
+            'max_connections_per_instance': self.max_connections_per_instance,
+            'max_response_time': self.max_response_time,
+            'max_error_rate': self.max_error_rate,
+            'max_consecutive_failures': self.max_consecutive_failures,
+            'health_check_timeout': self.health_check_timeout,
+            'health_check_retry_attempts': self.health_check_retry_attempts,
+            'default_weight': self.default_weight,
+            'default_priority': self.default_priority,
+            'enable_rate_limiting': self.enable_rate_limiting,
+            'rate_limit_buffer': self.rate_limit_buffer,
+            'enable_metrics': self.enable_metrics,
+            'metrics_retention_count': self.metrics_retention_count,
+            'enable_sticky_sessions': self.enable_sticky_sessions,
+            'session_timeout': self.session_timeout,
+            'enable_weighted_random': self.enable_weighted_random
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'LoadBalancerConfig':
+        """Cria configuração a partir de dicionário."""
+        # Convert strategy string to enum if needed
+        strategy = data.get('strategy', BalancingStrategy.ADAPTIVE)
+        if isinstance(strategy, str):
+            try:
+                strategy = BalancingStrategy(strategy)
+            except ValueError:
+                logger.warning(f"Estratégia desconhecida: {strategy}, usando ADAPTIVE")
+                strategy = BalancingStrategy.ADAPTIVE
+        
+        return cls(
+            strategy=strategy,
+            health_check_interval=data.get('health_check_interval', 30),
+            enable_circuit_breaker=data.get('enable_circuit_breaker', True),
+            circuit_breaker_threshold=data.get('circuit_breaker_threshold', 5),
+            circuit_breaker_recovery_timeout=data.get('circuit_breaker_recovery_timeout', 60),
+            max_connections_per_instance=data.get('max_connections_per_instance', 100),
+            max_response_time=data.get('max_response_time', 5.0),
+            max_error_rate=data.get('max_error_rate', 0.1),
+            max_consecutive_failures=data.get('max_consecutive_failures', 3),
+            health_check_timeout=data.get('health_check_timeout', 10.0),
+            health_check_retry_attempts=data.get('health_check_retry_attempts', 3),
+            default_weight=data.get('default_weight', 1.0),
+            default_priority=data.get('default_priority', 1),
+            enable_rate_limiting=data.get('enable_rate_limiting', True),
+            rate_limit_buffer=data.get('rate_limit_buffer', 0.8),
+            enable_metrics=data.get('enable_metrics', True),
+            metrics_retention_count=data.get('metrics_retention_count', 1000),
+            enable_sticky_sessions=data.get('enable_sticky_sessions', False),
+            session_timeout=data.get('session_timeout', 3600),
+            enable_weighted_random=data.get('enable_weighted_random', False)
+        )
+
+
+def create_config_from_dict(config_dict: Dict[str, Any]) -> LoadBalancerConfig:
+    """
+    Cria configuração do load balancer a partir de dicionário.
+    
+    Função de conveniência para criar LoadBalancerConfig a partir de
+    configuração fornecida em formato de dicionário.
+    
+    Args:
+        config_dict: Dicionário com configurações do load balancer
+        
+    Returns:
+        LoadBalancerConfig: Configuração validada do load balancer
+        
+    Raises:
+        ValueError: Se configuração for inválida
+    """
+    try:
+        # Verificar se config_dict é válido
+        if not isinstance(config_dict, dict):
+            logger.warning("Configuração de load balancer inválida, usando configuração padrão")
+            return LoadBalancerConfig()
+        
+        # Se config_dict estiver vazio, usar configuração padrão
+        if not config_dict:
+            logger.info("Usando configuração padrão para load balancer")
+            return LoadBalancerConfig()
+        
+        # Validar campos críticos
+        if 'strategy' in config_dict:
+            strategy_value = config_dict['strategy']
+            if isinstance(strategy_value, str):
+                # Verificar se é uma estratégia válida
+                valid_strategies = [strategy.value for strategy in BalancingStrategy]
+                if strategy_value not in valid_strategies:
+                    logger.warning(f"Estratégia inválida '{strategy_value}', usando ADAPTIVE")
+                    config_dict['strategy'] = BalancingStrategy.ADAPTIVE
+        
+        # Validar valores numéricos
+        numeric_fields = {
+            'health_check_interval': (1, 3600, 30),  # min, max, default
+            'circuit_breaker_threshold': (1, 50, 5),
+            'circuit_breaker_recovery_timeout': (10, 600, 60),
+            'max_connections_per_instance': (1, 1000, 100),
+            'max_response_time': (0.1, 60.0, 5.0),
+            'max_error_rate': (0.0, 1.0, 0.1),
+            'max_consecutive_failures': (1, 20, 3),
+            'health_check_timeout': (1.0, 30.0, 10.0),
+            'health_check_retry_attempts': (1, 10, 3),
+            'default_weight': (0.1, 10.0, 1.0),
+            'default_priority': (1, 100, 1),
+            'rate_limit_buffer': (0.1, 1.0, 0.8),
+            'metrics_retention_count': (100, 10000, 1000),
+            'session_timeout': (60, 86400, 3600)
+        }
+        
+        for field, (min_val, max_val, default_val) in numeric_fields.items():
+            if field in config_dict:
+                value = config_dict[field]
+                if not isinstance(value, (int, float)) or value < min_val or value > max_val:
+                    logger.warning(f"Valor inválido para {field}: {value}, usando {default_val}")
+                    config_dict[field] = default_val
+        
+        # Validar campos booleanos
+        boolean_fields = [
+            'enable_circuit_breaker', 'enable_rate_limiting', 'enable_metrics',
+            'enable_sticky_sessions', 'enable_weighted_random'
+        ]
+        
+        for field in boolean_fields:
+            if field in config_dict and not isinstance(config_dict[field], bool):
+                logger.warning(f"Valor booleano inválido para {field}, usando True")
+                config_dict[field] = True
+        
+        # Criar configuração
+        config = LoadBalancerConfig.from_dict(config_dict)
+        
+        logger.info(f"Configuração do load balancer criada: estratégia={config.strategy.value}")
+        return config
+        
+    except Exception as e:
+        logger.error(f"Erro ao criar configuração do load balancer: {e}")
+        logger.info("Usando configuração padrão")
+        return LoadBalancerConfig()
+
+
+def create_default_load_balancer_config() -> LoadBalancerConfig:
+    """
+    Cria configuração padrão do load balancer.
+    
+    Returns:
+        LoadBalancerConfig: Configuração padrão otimizada
+    """
+    return LoadBalancerConfig(
+        strategy=BalancingStrategy.ADAPTIVE,
+        health_check_interval=30,
+        enable_circuit_breaker=True,
+        circuit_breaker_threshold=5,
+        circuit_breaker_recovery_timeout=60,
+        max_connections_per_instance=100,
+        max_response_time=5.0,
+        max_error_rate=0.1,
+        max_consecutive_failures=3,
+        enable_rate_limiting=True,
+        rate_limit_buffer=0.8,
+        enable_metrics=True
+    )
+
+def _update_exchange_load_balancer_constructor():
+    """
+    Função para demonstrar como atualizar o construtor do ExchangeLoadBalancer
+    para aceitar LoadBalancerConfig. Esta não é uma implementação real, mas sim
+    um exemplo de como o construtor deveria ser modificado.
+    """
+    
+    # Exemplo de como o __init__ do ExchangeLoadBalancer deveria ser modificado:
+    """
+    def __init__(
+        self,
+        config: Optional[LoadBalancerConfig] = None,
+        strategy: Optional[BalancingStrategy] = None,
+        health_check_interval: Optional[int] = None,
+        enable_circuit_breaker: Optional[bool] = None
+    ):
+        # Usar config se fornecido, senão usar parâmetros individuais
+        if config:
+            self.config = config
+            self.strategy = config.strategy
+            self.health_check_interval = config.health_check_interval
+            self.enable_circuit_breaker = config.enable_circuit_breaker
+        else:
+            # Usar parâmetros individuais com valores padrão
+            self.strategy = strategy or BalancingStrategy.ADAPTIVE
+            self.health_check_interval = health_check_interval or 30
+            self.enable_circuit_breaker = enable_circuit_breaker or True
+            
+            # Criar config a partir dos parâmetros
+            self.config = LoadBalancerConfig(
+                strategy=self.strategy,
+                health_check_interval=self.health_check_interval,
+                enable_circuit_breaker=self.enable_circuit_breaker
+            )
+        
+        # Resto da inicialização...
+    """
+    pass
+
+def validate_load_balancer_config(config: LoadBalancerConfig) -> List[str]:
+    """
+    Valida configuração do load balancer.
+    
+    Args:
+        config: Configuração a ser validada
+        
+    Returns:
+        List[str]: Lista de erros encontrados (vazia se válida)
+    """
+    errors = []
+    
+    # Validar estratégia
+    if not isinstance(config.strategy, BalancingStrategy):
+        errors.append("Estratégia deve ser uma instância de BalancingStrategy")
+    
+    # Validar intervalos numéricos
+    if config.health_check_interval <= 0:
+        errors.append("Intervalo de health check deve ser positivo")
+    
+    if config.circuit_breaker_threshold <= 0:
+        errors.append("Threshold do circuit breaker deve ser positivo")
+    
+    if config.max_response_time <= 0:
+        errors.append("Tempo máximo de resposta deve ser positivo")
+    
+    if not (0.0 <= config.max_error_rate <= 1.0):
+        errors.append("Taxa máxima de erro deve estar entre 0.0 e 1.0")
+    
+    if not (0.0 < config.rate_limit_buffer <= 1.0):
+        errors.append("Buffer de rate limit deve estar entre 0.0 e 1.0")
+    
+    return errors

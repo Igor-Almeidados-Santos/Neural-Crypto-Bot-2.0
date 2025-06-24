@@ -8,9 +8,12 @@ from datetime import datetime
 from typing import Dict, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
-
-from src.api.dependencies import CurrentUser
+from fastapi import APIRouter, Depends, HTTPException
+from api.dtos.strategy_dto import BacktestRequest, BacktestResponse
+# A lógica de negócio será movida para um caso de uso, por enquanto corrigimos o caminho
+from strategy_engine.main import load_strategy  # Temporário até o UseCase ser refatorado
+from data_collection.main import get_historical_data # Temporário até o UseCase ser refatorado
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 

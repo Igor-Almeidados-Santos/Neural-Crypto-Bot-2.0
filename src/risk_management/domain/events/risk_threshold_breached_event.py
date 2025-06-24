@@ -3,8 +3,8 @@ from datetime import datetime
 from typing import Dict, Optional
 from uuid import UUID, uuid4
 
-from src.risk_management.domain.entities.risk_metric import MetricType, RiskMetric
-from src.risk_management.domain.entities.risk_profile import RiskLevel, RiskProfile
+from risk_management.domain.entities.risk_metric import MetricType, RiskMetric
+from risk_management.domain.entities.risk_profile import RiskLevel, RiskProfile
 
 
 @dataclass

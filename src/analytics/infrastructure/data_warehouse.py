@@ -22,9 +22,9 @@ from pymongo import MongoClient
 import motor.motor_asyncio
 import redis.asyncio as redis
 
-from src.common.infrastructure.base_repository import BaseRepository
-from src.common.infrastructure.config import DatabaseConfig
-from src.analytics.domain.value_objects.performance_metric import (
+from common.infrastructure.base_repository import BaseRepository
+from common.infrastructure.config import DatabaseConfig
+from analytics.domain.value_objects.performance_metric import (
     PerformanceMetric, PerformanceMetricCollection, PerformanceAnalysis, MetricType
 )
 

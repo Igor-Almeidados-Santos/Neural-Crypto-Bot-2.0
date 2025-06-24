@@ -10,8 +10,8 @@ from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from src.execution_service.domain.entities.execution import Execution
-from src.execution_service.domain.entities.order import Order
+from execution_service.domain.entities.execution import Execution
+from execution_service.domain.entities.order import Order
 
 
 class OrderExecutedEvent(BaseModel):

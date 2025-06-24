@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from jose import jwt
 
-from src.api.middlewares.auth_middleware import AuthMiddleware
+from api.middlewares.auth_middleware import AuthMiddleware
 
 
 @pytest.fixture

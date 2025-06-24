@@ -4,8 +4,8 @@ from typing import Dict, List, Optional, Any
 import asyncio
 from datetime import datetime, timezone
 import uuid
-from src.common.domain.base_entity import BaseEntity
-from src.common.infrastructure.database.unit_of_work import UnitOfWork
+from common.domain.base_entity import BaseEntity
+from common.infrastructure.database.unit_of_work import UnitOfWork
 
 class TestEntity(BaseEntity):
     """A test entity class."""

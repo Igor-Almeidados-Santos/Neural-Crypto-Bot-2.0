@@ -13,8 +13,8 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from enum import Enum
 
-from src.common.domain.base_entity import BaseEntity
-from src.common.domain.base_value_object import BaseValueObject
+from common.domain.base_entity import BaseEntity
+from common.domain.base_value_object import BaseValueObject
 
 
 class LiquidationSide(Enum):

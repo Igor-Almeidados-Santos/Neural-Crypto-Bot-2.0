@@ -3,7 +3,7 @@ import pytest
 import os
 import json
 import tempfile
-from src.common.utils.config import (
+from common.utils.config import (
     get_config, get_config_value, get_config_int, 
     get_config_float, get_config_bool, get_config_list,
     get_config_dict, refresh_config

@@ -4,21 +4,21 @@ Feature Engineering Module - Features Package
 This package contains the feature calculators for different types of features.
 """
 
-from src.feature_engineering.application.features.technical_indicators import (
+from feature_engineering.application.features.technical_indicators import (
     MovingAverageCalculator, OscillatorCalculator, VolatilityCalculator,
     VolumeCalculator, TrendCalculator
 )
 
-from src.feature_engineering.application.features.statistical_features import (
+from feature_engineering.application.features.statistical_features import (
     DescriptiveStatisticsCalculator, TimeSeriesStatisticsCalculator,
     DistributionalStatisticsCalculator, MarketRegimeCalculator, AnomalyDetectionCalculator
 )
 
-from src.feature_engineering.application.features.orderbook_features import (
+from feature_engineering.application.features.orderbook_features import (
     OrderbookFeatureCalculator
 )
 
-from src.feature_engineering.application.features.sentiment_features import (
+from feature_engineering.application.features.sentiment_features import (
     NewsSentimentCalculator, SocialMediaSentimentCalculator, 
     OnChainSentimentCalculator, CombinedSentimentCalculator
 )

@@ -9,18 +9,18 @@ import uuid
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Union
 
-from src.execution_service.algorithms.iceberg import IcebergAlgorithm
-from src.execution_service.algorithms.smart_routing import SmartRoutingAlgorithm
-from src.execution_service.algorithms.twap import TwapAlgorithm
-from src.execution_service.application.services.execution_optimization_service import (
+from execution_service.algorithms.iceberg import IcebergAlgorithm
+from execution_service.algorithms.smart_routing import SmartRoutingAlgorithm
+from execution_service.algorithms.twap import TwapAlgorithm
+from execution_service.application.services.execution_optimization_service import (
     ExecutionOptimizationService,
 )
-from src.execution_service.application.services.order_routing_service import (
+from execution_service.application.services.order_routing_service import (
     OrderRoutingService,
 )
-from src.execution_service.domain.entities.execution import Execution
-from src.execution_service.domain.entities.order import Order
-from src.execution_service.domain.value_objects.execution_parameters import (
+from execution_service.domain.entities.execution import Execution
+from execution_service.domain.entities.order import Order
+from execution_service.domain.value_objects.execution_parameters import (
     DirectParameters,
     ExecutionParameters,
     IcebergParameters,
@@ -28,11 +28,11 @@ from src.execution_service.domain.value_objects.execution_parameters import (
     TwapParameters,
     create_execution_parameters,
 )
-from src.execution_service.infrastructure.exchange_client import ExchangeClient
-from src.execution_service.infrastructure.execution_event_publisher import (
+from execution_service.infrastructure.exchange_client import ExchangeClient
+from execution_service.infrastructure.execution_event_publisher import (
     ExecutionEventPublisher,
 )
-from src.execution_service.infrastructure.order_repository import OrderRepository
+from execution_service.infrastructure.order_repository import OrderRepository
 
 logger = logging.getLogger(__name__)
 

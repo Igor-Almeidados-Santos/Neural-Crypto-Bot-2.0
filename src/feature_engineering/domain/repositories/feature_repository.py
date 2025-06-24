@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from typing import List, Optional, Union
 from uuid import UUID
 
-from src.feature_engineering.domain.entities.feature import Feature, FeatureCategory, FeatureType
+from feature_engineering.domain.entities.feature import Feature, FeatureCategory, FeatureType
 
 
 class FeatureRepository(ABC):

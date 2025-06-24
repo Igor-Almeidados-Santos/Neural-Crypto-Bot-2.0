@@ -11,8 +11,8 @@ import pandas as pd
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from src.common.application.base_service import BaseService
-from src.analytics.domain.value_objects.performance_metric import (
+from common.application.base_service import BaseService
+from analytics.domain.value_objects.performance_metric import (
     PerformanceMetric, PerformanceMetricCollection, PerformanceAnalysis, MetricType
 )
 

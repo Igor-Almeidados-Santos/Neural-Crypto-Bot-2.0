@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
-from src.api.middlewares.logging_middleware import LoggingMiddleware
+from api.middlewares.logging_middleware import LoggingMiddleware
 
 
 @pytest.fixture

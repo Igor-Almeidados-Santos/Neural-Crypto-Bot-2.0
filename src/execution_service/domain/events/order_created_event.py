@@ -10,7 +10,7 @@ from typing import Dict, Optional
 
 from pydantic import BaseModel, Field
 
-from src.execution_service.domain.entities.order import Order
+from execution_service.domain.entities.order import Order
 
 
 class OrderCreatedEvent(BaseModel):

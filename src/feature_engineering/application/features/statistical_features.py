@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Union
 from statsmodels.tsa.stattools import adfuller, acf, pacf
 
-from src.feature_engineering.domain.entities.feature import (
+from feature_engineering.domain.entities.feature import (
     Feature, FeatureType, FeatureCategory, FeatureScope, FeatureTimeframe, FeatureMetadata
 )
 

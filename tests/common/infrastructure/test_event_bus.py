@@ -4,8 +4,8 @@ from typing import List, Any
 import asyncio
 from datetime import datetime, timezone
 import uuid
-from src.common.domain.base_event import BaseEvent
-from src.common.infrastructure.event_bus import InMemoryEventBus
+from common.domain.base_event import BaseEvent
+from common.infrastructure.event_bus import InMemoryEventBus
 
 class TestEvent(BaseEvent):
     """A test event class."""

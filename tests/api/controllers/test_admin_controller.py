@@ -12,7 +12,7 @@ import pytest
 from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
 
-from src.api.main import app
+from api.main import app
 
 
 @pytest.fixture
@@ -93,7 +93,7 @@ async def test_app_lifespan():
         app_mock = MagicMock()
         
         # Obtém o gerenciador de contexto lifespan
-        from src.api.main import lifespan
+        from api.main import lifespan
         
         # Executa o lifespan
         async with lifespan(app_mock):

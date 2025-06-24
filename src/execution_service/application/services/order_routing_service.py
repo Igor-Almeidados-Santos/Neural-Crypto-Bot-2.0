@@ -8,13 +8,13 @@ import logging
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
-from src.execution_service.domain.entities.order import Order
-from src.execution_service.domain.value_objects.execution_parameters import (
+from execution_service.domain.entities.order import Order
+from execution_service.domain.value_objects.execution_parameters import (
     DirectParameters,
     ExecutionParameters,
     SmartRoutingParameters,
 )
-from src.execution_service.infrastructure.exchange_client import ExchangeClient
+from execution_service.infrastructure.exchange_client import ExchangeClient
 
 logger = logging.getLogger(__name__)
 
@@ -282,7 +282,7 @@ class OrderRoutingService:
                 duration_minutes = 60
                 slices = 10
             
-            from src.execution_service.domain.value_objects.execution_parameters import TwapParameters
+            from execution_service.domain.value_objects.execution_parameters import TwapParameters
             return TwapParameters(
                 duration_minutes=duration_minutes,
                 num_slices=slices,
@@ -292,7 +292,7 @@ class OrderRoutingService:
             # Parâmetros Iceberg baseados no tamanho da ordem
             display_size = min(1.0, order.quantity * 0.2)  # 20% do total, no máximo 1.0
             
-            from src.execution_service.domain.value_objects.execution_parameters import IcebergParameters
+            from execution_service.domain.value_objects.execution_parameters import IcebergParameters
             return IcebergParameters(
                 display_size=display_size,
                 size_variance=0.2,
@@ -302,7 +302,7 @@ class OrderRoutingService:
                 continue_on_failure=True,
             )
         else:  # direct
-            from src.execution_service.domain.value_objects.execution_parameters import DirectParameters
+            from execution_service.domain.value_objects.execution_parameters import DirectParameters
             return DirectParameters(
                 retry_on_failure=True,
                 max_retries=3,

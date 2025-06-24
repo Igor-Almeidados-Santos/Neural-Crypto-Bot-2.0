@@ -10,9 +10,9 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Dict, List, Optional, Any, Union, Tuple
 
-from src.data_collection.domain.entities.candle import Candle, TimeFrame
-from src.data_collection.domain.entities.orderbook import OrderBook, OrderBookLevel
-from src.data_collection.domain.entities.trade import Trade, TradeSide
+from data_collection.domain.entities.candle import Candle, TimeFrame
+from data_collection.domain.entities.orderbook import OrderBook, OrderBookLevel
+from data_collection.domain.entities.trade import Trade, TradeSide
 
 
 logger = logging.getLogger(__name__)

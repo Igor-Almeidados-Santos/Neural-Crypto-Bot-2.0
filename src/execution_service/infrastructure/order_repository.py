@@ -27,7 +27,7 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
-from src.execution_service.domain.entities.order import Order
+from execution_service.domain.entities.order import Order
 
 logger = logging.getLogger(__name__)
 

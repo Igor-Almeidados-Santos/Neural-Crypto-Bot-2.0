@@ -9,7 +9,7 @@ from enum import Enum, auto
 from typing import Any, Dict, List, Optional, Set
 from uuid import UUID, uuid4
 
-from src.feature_engineering.domain.entities.feature import Feature
+from feature_engineering.domain.entities.feature import Feature
 
 
 class FeatureSetType(Enum):
@@ -217,7 +217,7 @@ class FeatureSet:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'FeatureSet':
         """Create FeatureSet instance from dictionary representation."""
-        from src.feature_engineering.domain.entities.feature import Feature
+        from feature_engineering.domain.entities.feature import Feature
         
         metadata = FeatureSetMetadata(
             description=data["metadata"]["description"],

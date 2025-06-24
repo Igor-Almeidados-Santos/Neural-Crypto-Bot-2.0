@@ -13,8 +13,8 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
-from src.api.version import APIVersion, VersionedEndpoint
-from src.common.utils.config import get_settings
+from api.version import APIVersion, VersionedEndpoint
+from common.utils.config import get_settings
 
 # Configure o logger
 logger = logging.getLogger(__name__)

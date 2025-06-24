@@ -4,7 +4,7 @@ from enum import Enum
 from typing import Dict, List, Optional, Tuple
 from uuid import UUID, uuid4
 
-from src.risk_management.domain.entities.risk_metric import MetricType
+from risk_management.domain.entities.risk_metric import MetricType
 
 
 class RiskLevel(Enum):

@@ -13,8 +13,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import statistics
 
-from src.data_collection.domain.entities.liquidation import Liquidation, LiquidationSide
-from src.common.infrastructure.database.base_repository import BaseRepository
+from data_collection.domain.entities.liquidation import Liquidation, LiquidationSide
+from common.infrastructure.database.base_repository import BaseRepository
 
 logger = logging.getLogger(__name__)
 

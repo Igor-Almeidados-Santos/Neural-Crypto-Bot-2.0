@@ -12,8 +12,8 @@ import pytest
 from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
 
-from src.api.controllers import analytics_controller
-from src.api.dtos.analytics_dto import (
+from api.controllers import analytics_controller
+from api.dtos.analytics_dto import (
     AlertConfig,
     AlertInstance,
     AnalyticsRequest,
@@ -28,8 +28,8 @@ from src.api.dtos.analytics_dto import (
     TimeRange,
     TradeAnalysisResponse,
 )
-from src.analytics.application.services.analytics_service import AnalyticsService
-from src.strategy_engine.domain.entities.strategy import Strategy
+from analytics.application.services.analytics_service import AnalyticsService
+from strategy_engine.domain.entities.strategy import Strategy
 
 
 @pytest.fixture

@@ -9,7 +9,7 @@ import shutil
 from datetime import datetime
 import pandas as pd
 
-from src.model_training.domain.entities.model import Model, ModelStatus, ModelType
+from model_training.domain.entities.model import Model, ModelStatus, ModelType
 
 
 logger = logging.getLogger(__name__)

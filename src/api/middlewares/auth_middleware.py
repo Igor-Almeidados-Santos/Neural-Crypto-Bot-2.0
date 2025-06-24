@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from jose import JWTError, jwt
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from src.common.utils.config import get_settings
+from common.utils.config import get_settings
 
 logger = logging.getLogger(__name__)
 

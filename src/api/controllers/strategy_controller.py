@@ -6,30 +6,12 @@ Este módulo implementa o controller para gerenciamento de estratégias de tradi
 import logging
 from typing import List, Optional
 from uuid import UUID
-
-from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
-
-from src.api.dependencies import (
-    BacktestStrategyUCDep, 
-    CurrentUser, 
-    ExecuteOrderUCDep, 
-    ExecuteStrategyUCDep, 
-    StrategyRepositoryDep
-)
-from src.api.dtos.strategy_dto import (
-    BacktestRequest, 
-    BacktestResult, 
-    OrderRequest, 
-    OrderResponse, 
-    SignalRequest, 
-    SignalResponse, 
-    StrategyCreate, 
-    StrategyListResponse, 
-    StrategyResponse, 
-    StrategyUpdate
-)
-from src.common.utils.validation import validate_trading_pair
-
+from fastapi import APIRouter, Depends, HTTPException
+from api.dtos.strategy_dto import BacktestRequest, BacktestResponse
+# A lógica de negócio será movida para um caso de uso, por enquanto corrigimos o caminho
+from strategy_engine.main import load_strategy  # Temporário até o UseCase ser refatorado
+from data_collection.main import get_historical_data # Temporário até o UseCase ser refatorado
+import pandas as pd
 logger = logging.getLogger(__name__)
 
 router = APIRouter()

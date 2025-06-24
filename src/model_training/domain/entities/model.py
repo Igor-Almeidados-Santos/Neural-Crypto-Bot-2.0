@@ -8,8 +8,8 @@ from enum import Enum, auto
 from typing import Any, Dict, List, Optional, Union
 import uuid
 
-from src.model_training.domain.entities.evaluation_metric import EvaluationMetric
-from src.model_training.domain.entities.training_config import TrainingConfig
+from model_training.domain.entities.evaluation_metric import EvaluationMetric
+from model_training.domain.entities.training_config import TrainingConfig
 
 
 class ModelStatus(Enum):

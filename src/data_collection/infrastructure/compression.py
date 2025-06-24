@@ -24,9 +24,9 @@ import numpy as np
 import pandas as pd
 from msgpack import packb, unpackb
 
-from src.data_collection.domain.entities.candle import Candle
-from src.data_collection.domain.entities.orderbook import OrderBook
-from src.data_collection.domain.entities.trade import Trade
+from data_collection.domain.entities.candle import Candle
+from data_collection.domain.entities.orderbook import OrderBook
+from data_collection.domain.entities.trade import Trade
 
 logger = logging.getLogger(__name__)
 

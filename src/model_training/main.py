@@ -9,17 +9,17 @@ import json
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 
-from src.model_training.domain.entities.model import Model, ModelStatus, ModelType
-from src.model_training.domain.entities.training_config import TrainingConfig
-from src.model_training.domain.entities.evaluation_metric import EvaluationMetric, MetricType, MetricDirection
+from model_training.domain.entities.model import Model, ModelStatus, ModelType
+from model_training.domain.entities.training_config import TrainingConfig
+from model_training.domain.entities.evaluation_metric import EvaluationMetric, MetricType, MetricDirection
 
-from src.model_training.application.use_cases.train_model_use_case import TrainModelUseCase
-from src.model_training.application.use_cases.evaluate_model_use_case import EvaluateModelUseCase
-from src.model_training.application.services.hyperparameter_optimization_service import HyperparameterOptimizationService
-from src.model_training.application.services.model_registry_service import ModelRegistryService
+from model_training.application.use_cases.train_model_use_case import TrainModelUseCase
+from model_training.application.use_cases.evaluate_model_use_case import EvaluateModelUseCase
+from model_training.application.services.hyperparameter_optimization_service import HyperparameterOptimizationService
+from model_training.application.services.model_registry_service import ModelRegistryService
 
-from src.model_training.infrastructure.experiment_tracker import ExperimentTracker
-from src.model_training.infrastructure.model_repository import ModelRepository
+from model_training.infrastructure.experiment_tracker import ExperimentTracker
+from model_training.infrastructure.model_repository import ModelRepository
 
 
 # Configure logging

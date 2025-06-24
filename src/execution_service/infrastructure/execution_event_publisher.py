@@ -12,10 +12,10 @@ from typing import Optional
 import confluent_kafka
 from confluent_kafka import Producer
 
-from src.execution_service.domain.entities.execution import Execution
-from src.execution_service.domain.entities.order import Order
-from src.execution_service.domain.events.order_created_event import OrderCreatedEvent
-from src.execution_service.domain.events.order_executed_event import OrderExecutedEvent
+from execution_service.domain.entities.execution import Execution
+from execution_service.domain.entities.order import Order
+from execution_service.domain.events.order_created_event import OrderCreatedEvent
+from execution_service.domain.events.order_executed_event import OrderExecutedEvent
 
 logger = logging.getLogger(__name__)
 

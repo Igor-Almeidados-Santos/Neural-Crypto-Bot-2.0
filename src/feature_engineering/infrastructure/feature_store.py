@@ -21,10 +21,10 @@ from sqlalchemy.future import select
 from sqlalchemy import and_, or_, desc, func
 
 # For feature entity conversions
-from src.feature_engineering.domain.entities.feature import (
+from feature_engineering.domain.entities.feature import (
     Feature, FeatureType, FeatureCategory, FeatureScope, FeatureTimeframe, FeatureMetadata
 )
-from src.feature_engineering.domain.entities.feature_set import (
+from feature_engineering.domain.entities.feature_set import (
     FeatureSet, FeatureSetType, FeatureSetStatus, FeatureSetMetadata
 )
 

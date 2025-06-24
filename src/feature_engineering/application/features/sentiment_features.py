@@ -10,7 +10,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Union, Any
 
-from src.feature_engineering.domain.entities.feature import (
+from feature_engineering.domain.entities.feature import (
     Feature, FeatureType, FeatureCategory, FeatureScope, FeatureTimeframe, FeatureMetadata
 )
 

@@ -17,8 +17,8 @@ from confluent_kafka.admin import AdminClient, NewTopic
 from concurrent.futures import ThreadPoolExecutor
 
 # For feature generation
-from src.feature_engineering.domain.entities.feature import FeatureTimeframe
-from src.feature_engineering.application.use_cases.generate_features_use_case import GenerateFeaturesUseCase
+from feature_engineering.domain.entities.feature import FeatureTimeframe
+from feature_engineering.application.use_cases.generate_features_use_case import GenerateFeaturesUseCase
 
 logger = logging.getLogger(__name__)
 

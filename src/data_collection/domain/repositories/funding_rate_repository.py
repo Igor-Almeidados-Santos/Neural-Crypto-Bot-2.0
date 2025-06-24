@@ -13,8 +13,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import statistics
 
-from src.data_collection.domain.entities.funding_rate import FundingRate
-from src.common.infrastructure.database.base_repository import BaseRepository
+from data_collection.domain.entities.funding_rate import FundingRate
+from common.infrastructure.database.base_repository import BaseRepository
 
 logger = logging.getLogger(__name__)
 

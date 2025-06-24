@@ -21,11 +21,11 @@ import structlog
 from python_json_logger import jsonlogger
 
 # Application components
-from src.feature_engineering.infrastructure.data_processor import DataProcessor
-from src.feature_engineering.infrastructure.feature_store import FeatureStore
-from src.feature_engineering.infrastructure.kafka_consumer import KafkaConsumer
-from src.feature_engineering.application.use_cases.generate_features_use_case import GenerateFeaturesUseCase
-from src.feature_engineering.domain.entities.feature import FeatureTimeframe
+from feature_engineering.infrastructure.data_processor import DataProcessor
+from feature_engineering.infrastructure.feature_store import FeatureStore
+from feature_engineering.infrastructure.kafka_consumer import KafkaConsumer
+from feature_engineering.application.use_cases.generate_features_use_case import GenerateFeaturesUseCase
+from feature_engineering.domain.entities.feature import FeatureTimeframe
 
 
 # Configure structured logging

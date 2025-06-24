@@ -6,11 +6,11 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 
-from src.risk_management.domain.entities.risk_metric import MetricType, RiskMetric, TimeFrame
-from src.risk_management.domain.entities.risk_profile import RiskProfile
-from src.risk_management.models.var_model import VaRModel
-from src.risk_management.models.expected_shortfall import ExpectedShortfallModel
-from src.risk_management.models.drawdown_control import DrawdownControl
+from risk_management.domain.entities.risk_metric import MetricType, RiskMetric, TimeFrame
+from risk_management.domain.entities.risk_profile import RiskProfile
+from risk_management.models.var_model import VaRModel
+from risk_management.models.expected_shortfall import ExpectedShortfallModel
+from risk_management.models.drawdown_control import DrawdownControl
 
 
 @dataclass

@@ -6,33 +6,33 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
 
-from src.risk_management.application.services.circuit_breaker_service import (
+from risk_management.application.services.circuit_breaker_service import (
     CircuitBreakerConfig, CircuitBreakerService, CircuitBreakerState
 )
-from src.risk_management.application.services.exposure_service import (
+from risk_management.application.services.exposure_service import (
     ExposureLimit, ExposureService
 )
-from src.risk_management.application.services.portfolio_analytics_service import (
+from risk_management.application.services.portfolio_analytics_service import (
     PortfolioAnalyticsService, PortfolioPosition
 )
-from src.risk_management.application.use_cases.generate_risk_report_use_case import (
+from risk_management.application.use_cases.generate_risk_report_use_case import (
     GenerateRiskReportUseCase, ReportTimeframe, RiskReportRequest
 )
-from src.risk_management.application.use_cases.validate_order_risk_use_case import (
+from risk_management.application.use_cases.validate_order_risk_use_case import (
     OrderRiskParams, ValidateOrderRiskUseCase
 )
-from src.risk_management.domain.entities.risk_metric import MetricType, RiskMetric, TimeFrame
-from src.risk_management.domain.entities.risk_profile import RiskLevel, RiskProfile
-from src.risk_management.domain.events.risk_threshold_breached_event import RiskThresholdBreachedEvent
-from src.risk_management.infrastructure.alert_notifier import (
+from risk_management.domain.entities.risk_metric import MetricType, RiskMetric, TimeFrame
+from risk_management.domain.entities.risk_profile import RiskLevel, RiskProfile
+from risk_management.domain.events.risk_threshold_breached_event import RiskThresholdBreachedEvent
+from risk_management.infrastructure.alert_notifier import (
     AlertChannel, AlertNotifier, AlertPriority
 )
-from src.risk_management.infrastructure.risk_repository import RiskRepository
-from src.risk_management.models.drawdown_control import (
+from risk_management.infrastructure.risk_repository import RiskRepository
+from risk_management.models.drawdown_control import (
     DrawdownControl, DrawdownControlStrategy
 )
-from src.risk_management.models.expected_shortfall import ESMethod, ExpectedShortfallModel
-from src.risk_management.models.var_model import VaRMethod, VaRModel
+from risk_management.models.expected_shortfall import ESMethod, ExpectedShortfallModel
+from risk_management.models.var_model import VaRMethod, VaRModel
 
 
 class RiskManagementSettings(BaseSettings):

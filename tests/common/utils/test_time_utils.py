@@ -3,7 +3,7 @@ import pytest
 from datetime import datetime, timedelta, timezone
 import time
 import pytz
-from src.common.utils.time_utils import (
+from common.utils.time_utils import (
     utcnow, timestamp_ms, timestamp_us, timestamp_ns, datetime_to_timestamp,
     datetime_to_timestamp_ms, timestamp_to_datetime, timestamp_ms_to_datetime,
     parse_datetime, format_datetime, format_timedelta, get_interval_timestamps,

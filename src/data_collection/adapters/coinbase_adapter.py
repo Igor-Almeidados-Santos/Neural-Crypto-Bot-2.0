@@ -20,11 +20,11 @@ from websockets.client import connect as ws_connect
 from websockets.exceptions import ConnectionClosed
 import orjson
 
-from src.data_collection.adapters.exchange_adapter_interface import ExchangeAdapterInterface
-from src.data_collection.domain.entities.candle import Candle, TimeFrame
-from src.data_collection.domain.entities.orderbook import OrderBook, OrderBookLevel
-from src.data_collection.domain.entities.trade import Trade, TradeSide
-from src.data_collection.infrastructure.websocket_client import WebSocketClient
+from data_collection.adapters.exchange_adapter_interface import ExchangeAdapterInterface
+from data_collection.domain.entities.candle import Candle, TimeFrame
+from data_collection.domain.entities.orderbook import OrderBook, OrderBookLevel
+from data_collection.domain.entities.trade import Trade, TradeSide
+from data_collection.infrastructure.websocket_client import WebSocketClient
 
 
 logger = logging.getLogger(__name__)

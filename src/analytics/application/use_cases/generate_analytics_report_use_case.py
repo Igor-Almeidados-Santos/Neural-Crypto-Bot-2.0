@@ -17,11 +17,11 @@ import base64
 import os
 import tempfile
 
-from src.common.application.base_use_case import BaseUseCase
-from src.analytics.application.services.performance_attribution_service import PerformanceAttributionService
-from src.analytics.application.services.analytics_service import AnalyticsService
-from src.analytics.infrastructure.dashboard_publisher import DashboardPublisher
-from src.analytics.infrastructure.data_warehouse import DataWarehouse
+from common.application.base_use_case import BaseUseCase
+from analytics.application.services.performance_attribution_service import PerformanceAttributionService
+from analytics.application.services.analytics_service import AnalyticsService
+from analytics.infrastructure.dashboard_publisher import DashboardPublisher
+from analytics.infrastructure.data_warehouse import DataWarehouse
 
 
 class GenerateAnalyticsReportUseCase(BaseUseCase):
@@ -1881,11 +1881,11 @@ import base64
 import os
 import tempfile
 
-from src.common.application.base_use_case import BaseUseCase
-from src.analytics.application.services.performance_attribution_service import PerformanceAttributionService
-from src.analytics.application.services.analytics_service import AnalyticsService
-from src.analytics.infrastructure.dashboard_publisher import DashboardPublisher
-from src.analytics.infrastructure.data_warehouse import DataWarehouse
+from common.application.base_use_case import BaseUseCase
+from analytics.application.services.performance_attribution_service import PerformanceAttributionService
+from analytics.application.services.analytics_service import AnalyticsService
+from analytics.infrastructure.dashboard_publisher import DashboardPublisher
+from analytics.infrastructure.data_warehouse import DataWarehouse
 
 
 class GenerateAnalyticsReportUseCase(BaseUseCase):

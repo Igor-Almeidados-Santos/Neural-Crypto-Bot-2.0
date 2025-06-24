@@ -10,8 +10,8 @@ from typing import Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field, validator
 
-from src.execution_service.domain.entities.order import Order
-from src.execution_service.domain.value_objects.execution_parameters import ExecutionParameters
+from execution_service.domain.entities.order import Order
+from execution_service.domain.value_objects.execution_parameters import ExecutionParameters
 
 
 class Execution(BaseModel):

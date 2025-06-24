@@ -7,8 +7,8 @@ mantendo a consistência do agregado como um todo.
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Type
 
-from src.common.domain.base_entity import BaseEntity
-from src.common.domain.base_event import BaseEvent
+from common.domain.base_entity import BaseEntity
+from common.domain.base_event import BaseEvent
 
 
 @dataclass
